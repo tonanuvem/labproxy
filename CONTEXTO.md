@@ -604,25 +604,46 @@ Regra que sai disso: **todo serviço que fala com o host precisa do
    O Lambda do projeto `dns` já é dono dessa zona, já escreve nela e roda com
    uma role que não expira.
 
-   O desenho que cabe: **uma rota na API que já existe**, reusando o
-   `_eh_admin` (header `x-admin-key`), o `_enviar_ao_route53` e a
-   configuração da zona — nada de serviço novo. `POST /acme/present` e
-   `POST /acme/cleanup`, com o corpo do provider `httpreq` do lego
-   (`{"fqdn", "value"}`), que o lego chama direto sem nenhuma cola.
+   O desenho: **uma rota na API que já existe**, reusando o `_eh_admin`
+   (header `x-admin-key`), o `_enviar_ao_route53` e a configuração da zona —
+   nada de serviço novo. `POST /acme/present` e `POST /acme/cleanup`.
 
    **Não pendurar no `/registros`.** As semânticas de posse são diferentes:
    `/registros` é "um aluno é dono de um alias, provado pelo token", e o TXT
    do ACME não tem dono aluno — é o instrutor agindo sobre a zona. Misturar
    obriga a abrir exceção no `_dono_confere` e no `_validar_entrada`.
 
-   Os limites que tornam isso seguro: só `TXT`, só nomes começando com
-   `_acme-challenge.`, só na zona da turma, TTL 60, `present` idempotente,
-   e **nunca** com a senha da turma, que é pública — com ela, qualquer um
-   forjaria validação ACME de qualquer nome da zona.
+   **Do lado do lego, o provider é o `exec`, não o `httpreq`.** Eu tinha
+   recomendado `httpreq` por dispensar script de cola; a sessão do repo `dns`
+   mostrou que não fecha, e verifiquei: o `httpreq` só emite *basic auth*,
+   não dá para mandar `x-admin-key`. Pior, o `lambda_handler` roda
+   `verificar_senha(x-api-key)` e devolve 401 **antes** de rotear qualquer
+   coisa, e o lego não manda `x-api-key` — então `httpreq` exigiria uma rota
+   privilegiada acima do portão de autenticação, no arquivo em que todo o
+   resto passa por ele. A cola de ~15 linhas do `exec` é mais barata que essa
+   exceção: o script manda os dois headers como qualquer cliente.
 
-   O `emitir-cert.sh` então troca `--dns route53` por `--dns httpreq` e
-   deixa de precisar de credencial AWS; passa a precisar só da senha de
-   instrutor, e pode rodar de qualquer máquina.
+   Cuidados do script: `EXEC_MODE` indefinido (em RAW ele recebe o token cru
+   em vez do valor pronto), e ignorar argumentos extras — versões novas do
+   lego passam o TTL como quarto parâmetro.
+
+   Os limites que tornam isso seguro: só `TXT`, só nomes começando com
+   `_acme-challenge.`, só na zona da turma, TTL 60, e **nunca** com a senha
+   da turma, que é pública — com ela, qualquer um forjaria validação ACME de
+   qualquer nome da zona. Idempotência do `present` sai de graça: o lego não
+   lê o corpo da resposta, qualquer 2xx é sucesso.
+
+   **O par `present`/`cleanup` tem de somar e subtrair, não sobrescrever.**
+   Se o certificado um dia ganhar o apex `aluno.lab.tonanuvem.com` junto do
+   curinga, os dois validam no mesmo `_acme-challenge.aluno.lab...` e
+   precisam de dois TXT simultâneos. `present` faz UPSERT da união; `cleanup`
+   remove só o próprio valor e apaga o RRset apenas quando esvaziar. Um
+   `cleanup` que deleta o RRset inteiro derruba o desafio do outro nome ainda
+   em voo.
+
+   O `emitir-cert.sh` então troca `--dns route53` por `--dns exec` e deixa de
+   precisar de credencial AWS; passa a precisar só da senha de instrutor, e
+   pode rodar de qualquer máquina.
 
    Isso resolve §6.1 e §6.2 juntos, porque o mesmo serviço que valida o
    token de posse passa a poder guardar e servir o certificado. Encaminhado
