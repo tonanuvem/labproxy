@@ -30,7 +30,8 @@ type containerDocker struct {
 type situacao int
 
 const (
-	acessivel   situacao = iota // publicada no host: o proxy alcanca, e e' web
+	acessivel   situacao = iota // publicada por container: o proxy alcanca, e e' web
+	noHost                      // processo do host, fora do Docker (code-server, npm)
 	naoWeb                      // alcancavel, mas a porta nao fala HTTP (banco, fila)
 	bloqueada                   // publicada, mas na denylist administrativa
 	soLoopback                  // -p 127.0.0.1:X:Y  -> inalcancavel (intencional, §5)
@@ -51,6 +52,9 @@ type inventario struct {
 	Entradas  []entrada
 	Permitido map[int]bool
 	Em        time.Time
+
+	// portas que algum container publicou, para nao duplicar na varredura
+	vistaEmContainer map[int]bool
 }
 
 type docker struct {
@@ -98,7 +102,11 @@ func (d *docker) inventario() (*inventario, error) {
 		return nil, err
 	}
 
-	inv := &inventario{Permitido: map[int]bool{}, Em: time.Now()}
+	inv := &inventario{
+		Permitido:        map[int]bool{},
+		vistaEmContainer: map[int]bool{},
+		Em:               time.Now(),
+	}
 	visto := map[string]bool{} // dedupe: Docker lista IPv4 e IPv6 da mesma porta
 
 	for _, c := range cs {
@@ -137,6 +145,9 @@ func (d *docker) inventario() (*inventario, error) {
 				continue
 			}
 			visto[chave] = true
+			if e.Porta != 0 {
+				inv.vistaEmContainer[e.Porta] = true
+			}
 			inv.Entradas = append(inv.Entradas, e)
 		}
 	}
@@ -160,6 +171,31 @@ func (d *docker) inventario() (*inventario, error) {
 			e.Motivo = m
 		}
 		inv.Permitido[e.Porta] = true
+	}
+
+	// Agora as portas que nao sao de container nenhum. O aluno roda o
+	// code-server e um "npm run dev" direto na VM, e isso tambem e' o lab dele.
+	for porta := range varrerHost(portasVarredura()) {
+		if inv.vistaEmContainer[porta] {
+			continue // o docker-proxy da porta publicada ja apareceu acima
+		}
+		e := entrada{
+			Container: "processo do host",
+			Imagem:    "fora do Docker",
+			Porta:     porta,
+			Situacao:  noHost,
+		}
+		if motivo, barrada := portaAdministrativa(porta); barrada {
+			e.Situacao = bloqueada
+			e.Motivo = motivo
+		} else if m, naoFala := portaNaoWeb(porta); naoFala {
+			e.Situacao = naoWeb
+			e.Motivo = m
+			inv.Permitido[porta] = true
+		} else {
+			inv.Permitido[porta] = true
+		}
+		inv.Entradas = append(inv.Entradas, e)
 	}
 
 	sort.Slice(inv.Entradas, func(i, j int) bool {

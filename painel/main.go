@@ -78,11 +78,25 @@ func (a *app) authz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	motivo := "nenhum container publicou a porta " + bruta + " na interface do host"
-	for _, e := range inv.Entradas {
-		if e.Porta == p && e.Motivo != "" {
-			motivo = e.Motivo
-			break
+	// A varredura que monta a pagina cobre uma lista de portas comuns. Uma
+	// porta fora dela continua legitima se houver algo escutando, entao
+	// perguntamos na hora — do mesmo jeito que o Caddy vai perguntar logo em
+	// seguida, abrindo uma conexao para host.docker.internal.
+	motivoAdmin, barrada := portaAdministrativa(p)
+	if !barrada && escutando(p) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	motivo := "nada escutando na porta " + bruta + " na interface do host"
+	if barrada {
+		motivo = motivoAdmin
+	} else {
+		for _, e := range inv.Entradas {
+			if e.Porta == p && e.Motivo != "" {
+				motivo = e.Motivo
+				break
+			}
 		}
 	}
 	log.Printf("authz porta=%d negada: %s", p, motivo)

@@ -22,13 +22,17 @@ func (e entrada) URL(host string) string {
 }
 
 // Aberta: o proxy libera a porta. Clicavel: vale oferecer um link.
-func (e entrada) Aberta() bool    { return e.Situacao == acessivel || e.Situacao == naoWeb }
-func (e entrada) Clicavel() bool  { return e.Situacao == acessivel }
+func (e entrada) Aberta() bool {
+	return e.Situacao == acessivel || e.Situacao == noHost || e.Situacao == naoWeb
+}
+func (e entrada) Clicavel() bool { return e.Situacao == acessivel || e.Situacao == noHost }
 func (e entrada) Bloqueada() bool { return e.Situacao == bloqueada }
 func (e entrada) Rotulo() string {
 	switch e.Situacao {
 	case acessivel:
 		return "HTTPS"
+	case noHost:
+		return "no host"
 	case naoWeb:
 		return "nao fala HTTP"
 	case bloqueada:
@@ -104,11 +108,12 @@ const tmplIndex = `
     <span class="nome">{{.Container}}</span>
     <span class="tag{{if .Clicavel}} ok{{end}}">{{.Rotulo}}</span>
   </div>
-  <div class="img">{{.Imagem}} &middot; container :{{.PortaInt}}</div>
+  <div class="img">{{.Imagem}}{{if .PortaInt}} &middot; container :{{.PortaInt}}{{end}}</div>
   {{if .Motivo}}<div class="motivo">{{.Motivo}}</div>{{end}}</li>
 {{end}}{{end}}</ul>
 {{else}}
-<p class="vazio">Nenhuma porta publicada ainda. Suba algo com <code>docker compose up -d</code> e recarregue.</p>
+<p class="vazio">Nada escutando ainda. Suba um container com
+<code>docker compose up -d</code>, ou um processo direto na VM, e recarregue.</p>
 {{end}}
 
 {{$out := false}}{{range .Inv.Entradas}}{{if not .Aberta}}{{$out = true}}{{end}}{{end}}
@@ -125,10 +130,11 @@ const tmplIndex = `
 {{end}}{{end}}</ul>
 {{end}}
 
-<p class="nota">So aparece aqui o container com porta <strong>publicada</strong>
+<p class="nota">Container so aparece aqui com porta <strong>publicada</strong>
 (<code>-p</code>). <code>EXPOSE</code> sozinho nao basta — e' a confusao mais
-comum. Uma porta publicada como <code>-p 127.0.0.1:5432:5432</code> fica
-inalcancavel de fora de proposito.</p>
+comum. Processo rodando direto na VM, fora do Docker, aparece como
+<em>no host</em>. Uma porta presa ao <code>127.0.0.1</code> fica inalcancavel
+de fora de proposito, e por isso nao aparece como aberta.</p>
 
 <footer>labproxy &middot; o endereco de cada app e'
 <code>https://&lt;porta&gt;.{{.Host}}</code></footer>

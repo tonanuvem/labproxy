@@ -294,11 +294,25 @@ denylist das que nos lembramos. O conjunto de portas administrativas que
 falam HTTP num lab não é enumerável de antemão — Kong (8001), Konga,
 Keycloak, Elastic, painéis de admin de qualquer um dos stacks.
 
-**Como ficou.** O aluno não declara nada: quem declara é o Docker. O Caddy
-pergunta ao painel, por `forward_auth`, se pode proxyar aquela porta, e o
-painel responde lendo o inventário dos containers. Uma porta só é liberada
-se algum container a publicou na interface do host **e** ela não está na
-denylist administrativa.
+**Como ficou.** O aluno não declara nada. O Caddy pergunta ao painel, por
+`forward_auth`, se pode proxyar aquela porta, e o painel responde. Uma porta
+é liberada se houver algo escutando nela na interface do host **e** ela não
+estiver na denylist administrativa.
+
+A primeira versão perguntava isso ao Docker, e estava errada: o `code-server`
+do lab **não roda em container**, nem o `npm run dev` que o aluno sobe direto
+na VM. Tudo isso dava 403. A pergunta certa não é "o Docker conhece esta
+porta?", é "há algo escutando onde o Caddy vai bater?" — então o painel
+pergunta do mesmo jeito que o Caddy, abrindo uma conexão TCP para
+`host.docker.internal:<porta>`.
+
+Isso preserva de graça a regra do §5: uma porta presa ao `127.0.0.1` não
+atende por `host.docker.internal`, o discador falha, e ela continua
+inalcançável — sem precisar ler `/proc` nem dar mais privilégio ao painel.
+
+O Docker continua sendo consultado, mas só para **desenhar** a página: é dele
+que vêm o nome do container e a imagem. Uma porta de processo do host aparece
+marcada como *no host*.
 
 Isso é dinâmico de propósito: um container que sobe depois é alcançável sem
 regenerar o Caddyfile nem recarregar o Caddy. Verificado — um container
@@ -306,9 +320,16 @@ publicado após a subida do proxy respondeu na hora.
 
 A denylist continua existindo, porque a allowlist por si só não salva: a
 Admin API do Kong **é** uma porta publicada por um container. Ela nasce com
-2375/2376/2377, 8001, 8444, 9000/9001, e aceita `PORTAS_BLOQUEADAS` para
+22, 2375/2376/2377, 8001, 8444, 9000/9001, e aceita `PORTAS_BLOQUEADAS` para
 acrescentar e `PORTAS_LIBERADAS` para abrir uma porta administrativa de
 propósito numa aula.
+
+A **22 entrou na denylist junto com a descoberta de processos do host**, e a
+ordem importa: enquanto o painel só olhava containers, ela era barrada por
+acidente — o `sshd` não é container nenhum. Passando a olhar o host, ela
+entraria sozinha na allowlist. Proxyá-la não daria SSH de todo jeito, porque
+o `reverse_proxy` fala HTTP e o handshake do SSH não é HTTP (dá 502), mas
+deixá-la fora é explícito e não depende desse acidente.
 
 O `/_authz` é **fail-closed**: se o painel não consegue falar com o Docker,
 ele não sabe quais portas são legítimas e nenhuma é liberada (503).
@@ -490,7 +511,11 @@ O Apache do host seguiu respondendo na 80 durante todo o teste, e nenhum dos
 - Nenhuma emissão real da Let's Encrypt: todo o teste correu com
   autoassinado. O caminho do `LABPROXY_CERT_URL` tem o cliente escrito, mas
   nunca falou com um endpoint de verdade (§6.1).
-- Nenhum aluno de verdade rodou o `curl | bash` a partir do GitHub — os
-  testes copiaram os arquivos para a VM. O caminho de download do `proxy.sh`
-  só será exercitado quando o repositório estiver publicado.
+- O `curl | bash` a partir do GitHub **foi exercitado** em 2026-10-29, numa
+  segunda VM (`teste5.aluno.lab.tonanuvem.com`), por quem não tinha os
+  arquivos em mãos: subiu os 3 serviços e o painel respondeu com o
+  `basic_auth` de pé. É o caminho que o aluno vai usar.
+- A descoberta de portas do host foi escrita depois desse teste e **ainda não
+  rodou numa VM**: `go build` e `go vet` passam, mas o comportamento com o
+  `code-server` na 8099 precisa ser confirmado em aula.
 - NiFi, o contraexemplo de §8, não foi testado atrás do proxy.

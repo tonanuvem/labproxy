@@ -14,6 +14,10 @@ import (
 // O caso que motivou a lista foi a Admin API do Kong na 8001, que o proxy
 // entregou inteira durante a validacao do §7.
 var denylistPadrao = map[int]string{
+	// A 22 passou a importar quando o painel deixou de olhar so para
+	// containers: o sshd escuta no host, entao sem esta linha ele entraria
+	// na allowlist sozinho.
+	22:   "SSH: nao se proxya administracao da VM por HTTP",
 	2375: "API do Docker sem TLS: proxya-la e' entregar root na VM",
 	2376: "API do Docker com TLS",
 	2377: "porta de cluster do Swarm",
