@@ -31,6 +31,12 @@ USUARIO="${LABPROXY_USUARIO:-aluno}"
 AUTH="${LABPROXY_AUTH:-on}"
 CADDY_IMG="${LABPROXY_CADDY_IMG:-caddy:2.10-alpine}"
 
+# Tudo que o proxy.sh precisa buscar quando roda por 'curl | bash'.
+# Ao acrescentar um arquivo ao repositorio, acrescente aqui tambem.
+ARQUIVOS="docker-compose.yml Caddyfile.tmpl
+painel/go.mod painel/Dockerfile
+painel/main.go painel/docker.go painel/portas.go painel/host.go painel/html.go"
+
 N=$'\033[1m'; F=$'\033[0m'; V=$'\033[32m'; A=$'\033[33m'; R=$'\033[31m'
 msg()  { printf '%s\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -96,16 +102,21 @@ baixar_arquivos() {
   mkdir -p "$DIR/painel" "$DIR/cert"
 
   local f
-  for f in docker-compose.yml Caddyfile.tmpl \
-           painel/go.mod painel/Dockerfile painel/main.go painel/docker.go \
-           painel/portas.go painel/html.go; do
+  for f in $ARQUIVOS; do
     if [ -n "$base" ] && [ -f "$base/$f" ]; then
       cp "$base/$f" "$DIR/$f"
     else
       curl -fsS --max-time 30 "$RAW/$f" -o "$DIR/$f" \
         || erro "falha ao baixar $f de $RAW"
     fi
+    [ -s "$DIR/$f" ] || erro "$f veio vazio de $RAW"
   done
+
+  # O painel e' um pacote Go: faltando um .go ele nao compila. Conferir aqui
+  # da' um erro legivel, em vez de um stack trace do compilador la' na frente.
+  local n
+  n=$(ls "$DIR"/painel/*.go 2>/dev/null | wc -l | tr -d ' ')
+  [ "$n" -ge 5 ] || erro "so $n arquivos .go no painel; esperava 5. Lista desatualizada?"
   ok "arquivos em ${DIR}"
 }
 
