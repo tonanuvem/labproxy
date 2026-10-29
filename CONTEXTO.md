@@ -276,6 +276,7 @@ para rodar o lab inteiro assim; o navegador reclama uma vez.
 ```
 labproxy/
 ├── emitir-cert.sh         # lado do INSTRUTOR: emite o certificado da turma
+├── acme-dns.sh            # cola do lego para a API da turma (--dns exec)
 ├── docker-compose.yml     # caddy + painel + dockerproxy
 ├── Caddyfile.tmpl         # template; o Caddyfile gerado não é versionado
 ├── painel/
@@ -643,9 +644,20 @@ Regra que sai disso: **todo serviço que fala com o host precisa do
    `cleanup` que deleta o RRset inteiro derruba o desafio do outro nome ainda
    em voo.
 
-   O `emitir-cert.sh` então troca `--dns route53` por `--dns exec` e deixa de
-   precisar de credencial AWS; passa a precisar só da senha de instrutor, e
-   pode rodar de qualquer máquina.
+   **O lado do labproxy já está escrito**, contra o contrato acordado com a
+   sessão do repo `dns`: `acme-dns.sh` é a cola que o `lego` chama, e o
+   `emitir-cert.sh` escolhe o caminho sozinho — configurado para a API, usa
+   `--dns exec` e dispensa credencial AWS; sem isso, segue no `--dns route53`
+   de hoje. Nada quebra enquanto a rota não existir.
+
+   Contrato, confirmado dos dois lados: `POST /acme/present` e
+   `POST /acme/cleanup`, corpo `{"fqdn", "value"}` nos dois, os dois headers
+   de autenticação que a API já usa, 200 em sucesso, e `cleanup` idempotente.
+   O `fqdn` vai como o `lego` entrega, com ponto final; a API normaliza.
+
+   Verificado contra um endpoint simulado: caminho, campos e headers chegam
+   certos, e o script sai não-zero quando a API recusa ou está fora do ar —
+   que é o que faz o `lego` abortar em vez de seguir sem o TXT.
 
    Isso resolve §6.1 e §6.2 juntos, porque o mesmo serviço que valida o
    token de posse passa a poder guardar e servir o certificado. Encaminhado

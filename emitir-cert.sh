@@ -11,8 +11,16 @@
 # todos os alunos — joao.<turma>..., maria.<turma>... — e nao muda quando
 # entra aluno novo. Uma emissao por turma a cada 90 dias.
 #
-# Requisitos: credencial da conta que hospeda a zona (CloudShell ja tem) e
-# Docker, para rodar o lego sem instalar nada.
+# Dois caminhos para criar o TXT do desafio:
+#
+#   DNS_ADMIN_KEY definida -> fala com a API da turma pelo acme-dns.sh.
+#                             Dispensa credencial AWS e roda de qualquer
+#                             maquina. Exige a rota /acme na API.
+#   sem ela                -> escreve direto no Route 53. Exige credencial da
+#                             conta da turma, que no AWS Academy expira em
+#                             poucas horas.
+#
+# Requisito comum: Docker, para rodar o lego sem instalar nada.
 #
 set -euo pipefail
 
@@ -32,18 +40,26 @@ aviso() { printf '  %s!%s %s\n' "$A" "$F" "$*"; }
 erro()  { printf '  %s✗%s %s\n' "$R" "$F" "$*" >&2; exit 1; }
 
 command -v docker >/dev/null || erro "docker nao encontrado."
-command -v aws >/dev/null    || erro "aws cli nao encontrada."
 
-CONTA=$(aws sts get-caller-identity --query Account --output text 2>/dev/null) \
-  || erro "credencial AWS ausente ou expirada. No CloudShell ela ja existe."
-ok "conta AWS: $CONTA"
+VIA_API=0
+if [ -n "${DNS_ADMIN_KEY:-}" ]; then
+  VIA_API=1
+  ok "desafio pela API da turma (dispensa credencial AWS)"
+else
+  command -v aws >/dev/null || erro "sem DNS_ADMIN_KEY e sem aws cli: nao ha como criar o TXT."
+  CONTA=$(aws sts get-caller-identity --query Account --output text 2>/dev/null) \
+    || erro "credencial AWS ausente ou expirada.
+       No CloudShell da conta da turma ela ja existe. Alternativa sem AWS:
+       exporte DNS_ADMIN_KEY com a senha de instrutor e use a API da turma."
+  ok "conta AWS: $CONTA"
 
-ZONA_ID=$(aws route53 list-hosted-zones \
-  --query "HostedZones[?Name=='${ZONA}.'].Id | [0]" --output text 2>/dev/null)
-[ -n "$ZONA_ID" ] && [ "$ZONA_ID" != "None" ] \
-  || erro "zona '${ZONA}' nao encontrada nesta conta. Confira o nome da turma."
-ZONA_ID="${ZONA_ID##*/}"
-ok "zona: ${ZONA} (${ZONA_ID})"
+  ZONA_ID=$(aws route53 list-hosted-zones \
+    --query "HostedZones[?Name=='${ZONA}.'].Id | [0]" --output text 2>/dev/null)
+  [ -n "$ZONA_ID" ] && [ "$ZONA_ID" != "None" ] \
+    || erro "zona '${ZONA}' nao encontrada nesta conta. Confira o nome da turma."
+  ZONA_ID="${ZONA_ID##*/}"
+  ok "zona: ${ZONA} (${ZONA_ID})"
+fi
 
 if [ "$PRODUCAO" = "1" ]; then
   SERVIDOR="https://acme-v02.api.letsencrypt.org/directory"
@@ -61,10 +77,25 @@ printf '\n  Pedindo %s\n\n' "${N}${NOME}${F}"
 # (credencial da sessao) e com perfil local, e nao aparece na linha de comando.
 ENVFILE=$(mktemp); trap 'rm -f "$ENVFILE"' EXIT
 chmod 600 "$ENVFILE"
-aws configure export-credentials --format env-no-export > "$ENVFILE" 2>/dev/null \
-  || erro "nao consegui exportar a credencial (precisa de aws cli v2). Tente no CloudShell."
-{ printf 'AWS_REGION=%s\n' "${AWS_REGION:-us-east-1}"
-  printf 'AWS_HOSTED_ZONE_ID=%s\n' "$ZONA_ID"; } >> "$ENVFILE"
+
+if [ "$VIA_API" = "1" ]; then
+  # EXEC_MODE fica FORA do ambiente de proposito: a comparacao do lego e'
+  # exata contra "RAW", e no modo padrao o script recebe o fqdn e o valor ja
+  # prontos, em vez do token cru.
+  { printf 'EXEC_PATH=/data/acme-dns.sh\n'
+    printf 'DNS_API_URL=%s\n'   "${DNS_API_URL:-https://api.${ZONA}}"
+    printf 'DNS_API_KEY=%s\n'   "${DNS_API_KEY:-aluno}"
+    printf 'DNS_ADMIN_KEY=%s\n' "$DNS_ADMIN_KEY"; } > "$ENVFILE"
+  cp "$(cd "$(dirname "$0")" && pwd)/acme-dns.sh" "$SAIDA/acme-dns.sh"
+  chmod +x "$SAIDA/acme-dns.sh"
+  PROVIDER=exec
+else
+  aws configure export-credentials --format env-no-export > "$ENVFILE" 2>/dev/null \
+    || erro "nao consegui exportar a credencial (precisa de aws cli v2). Tente no CloudShell."
+  { printf 'AWS_REGION=%s\n' "${AWS_REGION:-us-east-1}"
+    printf 'AWS_HOSTED_ZONE_ID=%s\n' "$ZONA_ID"; } >> "$ENVFILE"
+  PROVIDER=route53
+fi
 
 docker run --rm -i \
   -v "$SAIDA:/data" -e LEGO_PATH=/data \
@@ -72,7 +103,7 @@ docker run --rm -i \
   "$LEGO_IMG" run \
     --server "$SERVIDOR" \
     --accept-tos --email "$EMAIL" \
-    --dns route53 \
+    --dns "$PROVIDER" \
     --dns.propagation.wait 30s \
     --key-type rsa2048 \
     -d "$NOME" \
