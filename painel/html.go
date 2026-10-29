@@ -13,6 +13,8 @@ type dadosIndex struct {
 	Persistente bool
 	TemSenha    bool
 	Usuario     string
+	Tunel       string // caminho do tunel SSH; vazio quando desligado
+	UsuarioSSH  string
 }
 
 type dadosNegado struct {
@@ -93,6 +95,8 @@ a.porta:hover{text-decoration:underline}
 .nota{border-left:2px solid var(--linha);padding:2px 0 2px 13px;color:var(--dim);font-size:13.5px;margin:12px 0}
 .vazio{color:var(--dim);font-size:14px}
 code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--linha);border-radius:4px;padding:1px 5px}
+pre{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);
+  border:1px solid var(--linha);border-radius:8px;padding:12px 14px;overflow-x:auto;margin:0 0 12px}
 footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--linha);color:var(--dim);font-size:12.5px}
 .prot{margin:0 0 26px;padding:14px 16px;border-radius:9px;border:1px solid var(--linha);background:var(--card)}
 .prot.aberto{border-color:var(--dim)}
@@ -186,6 +190,21 @@ se o container reiniciar, ela volta ao padrao.</p>
 comum. Processo rodando direto na VM, fora do Docker, aparece como
 <em>no host</em>. Uma porta presa ao <code>127.0.0.1</code> fica inalcancavel
 de fora de proposito, e por isso nao aparece como aberta.</p>
+
+{{if .Tunel}}
+<h2>Acesso SSH</h2>
+<p class="nota">A porta 22 desta VM esta aberta, mas algumas redes bloqueiam
+a saida nela. Este tunel leva o SSH por dentro do HTTPS, na 443. Instale o
+<code>wstunnel</code> e acrescente ao seu <code>~/.ssh/config</code>:</p>
+<pre>Host lab
+    HostName {{.Host}}
+    User {{.UsuarioSSH}}
+    IdentityFile ~/caminho/sua-chave.pem
+    ProxyCommand wstunnel client -L stdio://host.docker.internal:22 -P {{.Tunel}} wss://%h</pre>
+<p class="nota">Depois disso e' <code>ssh lab</code>. A chave <code>.pem</code>
+e' usada igual ao acesso direto — o tunel troca o transporte, nao a
+autenticacao.</p>
+{{end}}
 
 <footer>labproxy &middot; o endereco de cada app e'
 <code>http://&lt;porta&gt;.{{.Host}}</code> &middot; esta pagina e' a unica em

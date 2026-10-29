@@ -499,6 +499,9 @@ medido: o Caddy serve HTTP/2, e nele `Connection` e `Upgrade` são proibidos
 e removidos. Um matcher de cabeçalho funcionava só em HTTP/1.1 — com h2 a
 requisição caía no painel.
 
+Quando o túnel está ligado, **o painel mostra o bloco pronto** — antes disso
+a configuração só saía no fim do `proxy.sh`, que rola e some.
+
 Do lado de quem acessa, `brew install wstunnel` (ou o binário dos releases)
 e um bloco no `~/.ssh/config`:
 
@@ -528,6 +531,20 @@ túnel`. O mesmo `ssh -i` funciona com e sem o `ProxyCommand`.
 servidor** — o `wstunnel` conecta em qualquer coisa por padrão. Depois do
 certificado real, acrescentar `--tls-verify-certificate`. Até lá, o túnel é
 protegido só pelo segredo do caminho.
+
+### O Caddy não recarrega sozinho
+
+O `Caddyfile` e os certificados entram no container por bind mount. Mudar
+esses arquivos **não muda a definição do serviço**, então `docker compose
+up -d` não recria o Caddy e ele segue com a configuração antiga. E o Caddy
+também não relê certificado do disco por conta própria — medido: troquei o
+arquivo embaixo dele e continuou servindo o serial anterior; `caddy reload`
+falha porque a admin API está desligada.
+
+Juntos, os dois davam um sintoma silencioso: ligar o túnel ou trocar o
+certificado não tinha efeito nenhum até alguém reiniciar o container à mão.
+O `proxy.sh` agora guarda uma soma do `Caddyfile` mais o certificado e
+reinicia o Caddy quando ela muda.
 
 ### `host.docker.internal` no Linux
 

@@ -327,11 +327,16 @@ subir() {
   local inicial=0
   [ "$PROTECAO" = "on" ] && inicial=1
 
-  local perfis=""
-  [ "$TUNEL" = "on" ] && perfis="tunel"
+  local perfis="" caminho=""
+  if [ "$TUNEL" = "on" ]; then
+    perfis="tunel"
+    caminho="$CAMINHO_TUNEL"
+  fi
 
   cat > "$DIR/.env" <<EOF
 COMPOSE_PROFILES=$perfis
+LABPROXY_TUNEL_CAMINHO=$caminho
+LABPROXY_USUARIO_SSH=$(id -un)
 LABPROXY_HOST=$HOST
 LABPROXY_CADDY_IMG=$CADDY_IMG
 LABPROXY_USUARIO=$USUARIO
@@ -342,8 +347,24 @@ PORTAS_LIBERADAS=${PORTAS_LIBERADAS:-}
 PORTAS_HOST=${PORTAS_HOST:-}
 EOF
   chmod 600 "$DIR/.env"
+  # O Caddyfile e os certificados entram no container por bind mount. Mudar
+  # esses arquivos nao muda a definicao do servico, entao o 'up -d' sozinho
+  # deixa o Caddy rodando com a config antiga — e o Caddy tambem nao rele
+  # certificado do disco por conta propria. Sem este restart, ligar o tunel
+  # ou trocar o certificado nao tem efeito nenhum ate alguem reiniciar a mao.
+  local soma_antes="" soma_agora
+  [ -f "$DIR/.soma_caddy" ] && soma_antes=$(cat "$DIR/.soma_caddy")
+  soma_agora=$(cat "$DIR/Caddyfile" "$DIR/cert/cert.pem" 2>/dev/null \
+    | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)
+
   ( cd "$DIR" && docker compose up -d --build ) \
     || erro "o 'docker compose up' falhou. Veja: cd $DIR && docker compose logs"
+
+  if [ "$soma_antes" != "$soma_agora" ]; then
+    ( cd "$DIR" && docker compose restart caddy >/dev/null 2>&1 ) \
+      && ok "Caddy reiniciado: a config ou o certificado mudaram"
+  fi
+  printf '%s\n' "$soma_agora" > "$DIR/.soma_caddy"
 }
 
 verificar() {

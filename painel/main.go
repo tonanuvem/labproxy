@@ -18,6 +18,7 @@ type app struct {
 	host    string // nome base do aluno: joao.aluno.lab.tonanuvem.com
 	usuario string
 	senha   string
+	tunel   string // caminho do tunel SSH; vazio quando desligado
 	docker  *docker
 	estado  *estado
 }
@@ -34,6 +35,7 @@ func main() {
 		host:    env("LABPROXY_HOST", "localhost"),
 		usuario: env("LABPROXY_USUARIO", "aluno"),
 		senha:   os.Getenv("LABPROXY_SENHA"),
+		tunel:   os.Getenv("LABPROXY_TUNEL_CAMINHO"),
 		docker:  novoDocker(env("DOCKER_API", "http://dockerproxy:2375"), 3*time.Second),
 		estado:  carregarEstado(env("DIR_ESTADO", "/estado"), env("PROTECAO_INICIAL", "0") == "1"),
 	}
@@ -185,5 +187,7 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 		Persistente: a.estado.persistente(),
 		TemSenha:    a.senha != "",
 		Usuario:     a.usuario,
+		Tunel:       a.tunel,
+		UsuarioSSH:  env("LABPROXY_USUARIO_SSH", "ubuntu"),
 	})
 }

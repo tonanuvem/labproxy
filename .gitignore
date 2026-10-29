@@ -8,3 +8,7 @@ Caddyfile
 
 .env
 .DS_Store
+
+# Soma do Caddyfile+certificado, para saber quando reiniciar o Caddy.
+.soma_caddy
+.tunel_segredo

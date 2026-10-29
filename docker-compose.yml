@@ -42,6 +42,10 @@ services:
       LABPROXY_USUARIO: ${LABPROXY_USUARIO:-aluno}
       LABPROXY_SENHA: ${LABPROXY_SENHA:-}
       PROTECAO_INICIAL: ${PROTECAO_INICIAL:-0}
+      # Vazio quando o tunel esta desligado; o painel so mostra a secao de
+      # SSH quando ha um caminho.
+      LABPROXY_TUNEL_CAMINHO: ${LABPROXY_TUNEL_CAMINHO:-}
+      LABPROXY_USUARIO_SSH: ${LABPROXY_USUARIO_SSH:-ubuntu}
       DIR_ESTADO: /estado
     volumes:
       # Bind mount, nao volume nomeado: o painel roda como nonroot e um volume
