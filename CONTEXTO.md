@@ -27,6 +27,24 @@ Um ambiente Route 53 + Lambda + DynamoDB + React-Admin já em produção.
 **Zona da turma:** `aluno.lab.tonanuvem.com`, delegada a partir de
 `lab.tonanuvem.com`. O nome da turma é parametrizado (`config.sh aluno aluno`).
 
+**Em que conta cada zona vive** — isto importa mais do que parece, e custou
+uma sessão inteira para ficar claro:
+
+| Zona | Conta | Quem cria |
+|---|---|---|
+| `tonanuvem.com`, `lab.tonanuvem.com` | pessoal do instrutor (andre-aws) | à mão |
+| `aluno.lab.tonanuvem.com` | **turma, AWS Academy** (`voclabs`, `fiapaws4@outlook`) | o projeto `dns` |
+
+A zona pessoal guarda só o registro NS que delega `aluno.lab.tonanuvem.com`
+para os nameservers criados na conta da turma.
+
+A consequência prática: **tudo que escreve na zona da turma precisa de
+credencial da conta Academy**, e credencial de Academy é de sessão — expira
+em poucas horas. Foi o que impediu a emissão do certificado nesta sessão: o
+`emitir-cert.sh` precisa criar um TXT em `_acme-challenge.aluno.lab...`, e o
+token já tinha caducado. O Lambda do projeto `dns` não tem esse problema,
+porque roda com a `LabRole`, que não expira. Ver §6.1.
+
 **Registro do aluno.** O aluno roda na VM:
 
 ```bash
@@ -580,6 +598,23 @@ Regra que sai disso: **todo serviço que fala com o host precisa do
    no ACM **não exporta a chave privada**, que só pode ser anexada a ALB,
    CloudFront ou API Gateway — o Caddy na VM precisa do arquivo. O que serve
    é `*.<turma>.lab.tonanuvem.com` pela Let's Encrypt com DNS-01 (§3.5).
+0b. **O desafio DNS-01 deveria sair do `emitir-cert.sh` e ir para o projeto
+   `dns`.** Hoje o script escreve o TXT direto no Route 53, o que exige
+   credencial da conta Academy na mão de quem emite — e ela expira em horas.
+   O Lambda do projeto `dns` já é dono dessa zona, já escreve nela e roda com
+   uma role que não expira.
+
+   O desenho que cabe: a API implementa o protocolo **`httpreq` do lego** —
+   `POST /present` e `POST /cleanup`, corpo `{"fqdn", "value"}`, autenticados
+   pela senha de instrutor que já existe. O `emitir-cert.sh` troca
+   `--dns route53` por `--dns httpreq` e deixa de precisar de credencial AWS;
+   passa a precisar só da senha de instrutor. Quem emite pode ser qualquer
+   máquina.
+
+   Isso resolve §6.1 e §6.2 juntos, porque o mesmo serviço que valida o
+   token de posse passa a poder guardar e servir o certificado. Encaminhado
+   à sessão que cuida do repo `dns`.
+
 1. **Distribuição do certificado.** Continua o item crítico. O lado do
    cliente já está pronto e o contrato está em §3.4; falta o endpoint. O
    `proxy.sh` roda sem ele, com autoassinado, o que serve para desenvolver
