@@ -95,9 +95,9 @@ a.porta:hover{text-decoration:underline}
 code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--linha);border-radius:4px;padding:1px 5px}
 footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--linha);color:var(--dim);font-size:12.5px}
 .prot{margin:0 0 26px;padding:14px 16px;border-radius:9px;border:1px solid var(--linha);background:var(--card)}
-.prot.aberto{border-color:var(--bloq)}
+.prot.aberto{border-color:var(--dim)}
 .prot h3{margin:0 0 5px;font-size:14px;font-weight:650}
-.prot.aberto h3{color:var(--bloq)}
+.prot.aberto h3{color:var(--fg)}
 .prot p{margin:0 0 11px;font-size:13.5px;color:var(--dim)}
 .prot form{margin:0}
 button{font:inherit;font-size:13px;font-weight:550;padding:7px 14px;border-radius:7px;
@@ -127,16 +127,14 @@ const tmplIndex = `
 </div>
 {{else}}
 <div class="prot aberto">
-  <h3>Este lab esta aberto na internet</h3>
-  <p>Qualquer pessoa que descubra este endereco ve esta pagina e alcanca as
-  aplicacoes abaixo. O nome aparece nos registros publicos de certificado,
-  entao achar nao e' dificil. Se algo aqui aceita comandos — um
-  <code>code-server</code> sem senha, por exemplo — quem chegar executa
-  comandos nesta VM.</p>
+  <h3>Lab aberto</h3>
+  <p>Quem tiver este endereco abre as aplicacoes abaixo sem senha. Se voce
+  roda algo que aceita comandos, como o <code>code-server</code>, convem
+  fechar.</p>
   {{if .TemSenha}}
   <form method="post" action="/_protecao">
     <input type="hidden" name="acao" value="ativar">
-    <button class="forte" type="submit">Proteger com a senha da turma</button>
+    <button type="submit">Proteger com a senha da turma</button>
   </form>
   {{else}}
   <p>Nao ha senha configurada nesta VM. Suba o proxy de novo com

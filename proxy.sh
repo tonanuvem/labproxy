@@ -250,19 +250,22 @@ liberar_80() {
 }
 
 # --------------------------------------------------------------------- tunel
-# SSH por cima da 443, para a rede que bloqueia a 22. E' uma porta de
-# administracao exposta na internet, entao vem desligado e tem duas travas:
-# o wstunnel so aceita destino host.docker.internal:22, e exige um caminho
-# secreto no upgrade. O segredo e' por VM e sobrevive entre execucoes, senao
-# o ~/.ssh/config de quem usa quebraria a cada semana.
-segredo_tunel() {
-  local f="$DIR/.tunel_segredo"
-  if [ ! -s "$f" ]; then
-    (openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n') > "$f"
-    chmod 600 "$f"
-  fi
-  tr -d '[:space:]' < "$f"
-}
+# SSH por cima da 443, para a rede que bloqueia a 22.
+#
+# A trava e' o --restrict-to do wstunnel: o tunel so alcanca o SSH do host.
+# Nao ha caminho secreto por padrao, e isso e' deliberado — o sshd ja esta
+# exposto na internet pelo Security Group aberto do lab, entao um segredo
+# aqui nao protegeria nada que a porta 22 direta nao exponha, e so deixaria
+# o comando do aluno mais longo. O portao continua sendo a chave do SSH.
+#
+# O caminho padrao e' publico e curto, "_tunel", so para o Caddy saber o que
+# mandar ao wstunnel. Roteamos por caminho, e nao pelo cabecalho de upgrade,
+# porque o Caddy serve HTTP/2 e nele Connection/Upgrade sao proibidos e
+# removidos — um matcher de cabecalho so funcionaria em HTTP/1.1.
+#
+# LABPROXY_TUNEL_SEGREDO troca esse caminho por um segredo, para turma
+# avaliativa ou para o dia em que o Security Group deixar de ser aberto.
+CAMINHO_TUNEL="${LABPROXY_TUNEL_SEGREDO:-_tunel}"
 
 # ----------------------------------------------------------------- Caddyfile
 gerar_caddyfile() {
@@ -270,8 +273,7 @@ gerar_caddyfile() {
   # precisa do nome do aluno.
   local bloco=""
   if [ "$TUNEL" = "on" ]; then
-    SEGREDO=$(segredo_tunel)
-    bloco=$(printf 'handle /%s/* {\n\t\treverse_proxy tunel:8080\n\t}' "$SEGREDO")
+    bloco=$(printf 'handle /%s/* {\n\t\treverse_proxy tunel:8080\n\t}' "$CAMINHO_TUNEL")
   fi
 
   TUNEL_BLOCO="$bloco" HOST="$HOST" python3 -I -c '
@@ -325,15 +327,11 @@ subir() {
   local inicial=0
   [ "$PROTECAO" = "on" ] && inicial=1
 
-  local perfis="" segredo=""
-  if [ "$TUNEL" = "on" ]; then
-    perfis="tunel"
-    segredo=$(segredo_tunel)
-  fi
+  local perfis=""
+  [ "$TUNEL" = "on" ] && perfis="tunel"
 
   cat > "$DIR/.env" <<EOF
 COMPOSE_PROFILES=$perfis
-LABPROXY_TUNEL_SEGREDO=$segredo
 LABPROXY_HOST=$HOST
 LABPROXY_CADDY_IMG=$CADDY_IMG
 LABPROXY_USUARIO=$USUARIO
@@ -393,15 +391,17 @@ else
 fi
 msg
 if [ "$TUNEL" = "on" ]; then
-  SEGREDO=$(segredo_tunel)
   msg
-  msg "  ${N}Tunel SSH sobre a 443${F} (para rede que bloqueia a 22):"
+  msg "  ${N}Tunel SSH sobre a 443${F} (para rede que bloqueia a 22)."
+  msg "  No ~/.ssh/config de quem acessa, com 'brew install wstunnel':"
   msg
-  msg "    ssh -o ProxyCommand='wstunnel client -L stdio://host.docker.internal:22 \\"
-  msg "          -P $SEGREDO wss://$HOST' \\"
-  msg "        $(id -un)@$HOST"
+  msg "    Host ${NOME}"
+  msg "        HostName $HOST"
+  msg "        User $(id -un)"
+  msg "        IdentityFile ~/caminho/sua-chave.pem"
+  msg "        ProxyCommand wstunnel client -L stdio://host.docker.internal:22 -P $CAMINHO_TUNEL wss://%h"
   msg
-  info "  O caminho secreto acima e' a chave: quem o tiver alcanca o SSH desta VM."
+  info "  Depois disso: ssh ${NOME}. A chave .pem e' usada igual ao acesso direto."
   info "  Com certificado autoassinado o cliente nao valida o servidor; depois do"
   info "  certificado real, acrescente --tls-verify-certificate."
 fi

@@ -54,8 +54,12 @@ services:
 
   # Tunel SSH sobre a 443, para quando a rede de quem acessa bloqueia a 22.
   # Desligado por padrao: so sobe com LABPROXY_TUNEL=on, que liga este profile.
-  # Duas travas: --restrict-to prende o tunel ao SSH do host, e nada mais; -r
-  # exige um caminho secreto no upgrade, que o proxy.sh gera por VM.
+  #
+  # A trava que importa e' --restrict-to: o tunel so alcanca o SSH do host, e
+  # nada mais. Nao ha caminho secreto por padrao — o sshd ja esta exposto na
+  # internet pelo Security Group aberto do lab, entao o segredo nao protegia
+  # nada que a porta 22 direta nao exponha. Quem precisar dele numa turma
+  # avaliativa usa LABPROXY_TUNEL_SEGREDO, e o Caddy passa a exigir o caminho.
   tunel:
     image: ghcr.io/erebe/wstunnel:v11.1.0
     restart: unless-stopped
@@ -66,8 +70,6 @@ services:
       - ws://0.0.0.0:8080
       - --restrict-to
       - host.docker.internal:22
-      - -r
-      - ${LABPROXY_TUNEL_SEGREDO:?o tunel exige LABPROXY_TUNEL_SEGREDO no .env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks: [borda]

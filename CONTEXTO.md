@@ -483,12 +483,21 @@ expõe um caminho na 443 para ele. Duas travas, ambas verificadas:
 
 | Trava | Tentativa | Resultado |
 |---|---|---|
-| caminho secreto (`-r`) | prefixo errado | 404, o Caddy nem roteia |
+| caminho | prefixo errado | 404, o Caddy nem roteia |
 | destino fixo (`--restrict-to`) | tunelar para `1.1.1.1:443` | 400, o wstunnel recusa |
+| chave do SSH | é o portão de verdade, inalterado | |
 
-O segredo é gerado por VM, fica em `.tunel_segredo` e sobrevive entre
-execuções — senão o `~/.ssh/config` de quem usa quebraria toda semana. Ele
-**é a chave**: quem o tiver alcança o SSH daquela VM.
+**Não há segredo no caminho por padrão**, e isso é deliberado. O caminho é
+`_tunel`, público e curto. Um segredo ali não protegeria nada que a porta 22
+direta não exponha — o `sshd` já está na internet pelo Security Group aberto
+do lab — e só deixaria o comando mais longo. O portão continua sendo a chave
+do SSH. `LABPROXY_TUNEL_SEGREDO` troca `_tunel` por um segredo, para turma
+avaliativa ou para o dia em que o Security Group deixar de ser aberto.
+
+O roteamento é por caminho, e não pelo cabeçalho de upgrade, por um motivo
+medido: o Caddy serve HTTP/2, e nele `Connection` e `Upgrade` são proibidos
+e removidos. Um matcher de cabeçalho funcionava só em HTTP/1.1 — com h2 a
+requisição caía no painel.
 
 Do lado de quem acessa, `brew install wstunnel` (ou o binário dos releases)
 e um bloco no `~/.ssh/config`:
