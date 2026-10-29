@@ -1,0 +1,60 @@
+# labproxy: Caddy (TLS + roteamento por porta) + painel + socket do Docker
+# em modo leitura. Sobe pelo proxy.sh, que gera o Caddyfile e o .env.
+name: labproxy
+
+services:
+  caddy:
+    image: ${LABPROXY_CADDY_IMG:-caddy:2.10-alpine}
+    restart: unless-stopped
+    # So a 443. A 80 fica com o apache do host (§4).
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./cert/cert.pem:/etc/caddy/cert.pem:ro
+      - ./cert/key.pem:/etc/caddy/key.pem:ro
+      - caddy-data:/data
+    extra_hosts:
+      # Nao existe por padrao no Linux; sem isto o reverse_proxy nao acha o
+      # host. Resolve para o docker0, 172.17.0.1 (§5).
+      - "host.docker.internal:host-gateway"
+    networks: [borda]
+    depends_on:
+      painel:
+        condition: service_started
+
+  painel:
+    build: ./painel
+    image: labproxy/painel:local
+    restart: unless-stopped
+    environment:
+      LABPROXY_HOST: ${LABPROXY_HOST:?defina LABPROXY_HOST no .env}
+      DOCKER_API: http://dockerproxy:2375
+      PORTAS_BLOQUEADAS: ${PORTAS_BLOQUEADAS:-}
+      PORTAS_LIBERADAS: ${PORTAS_LIBERADAS:-}
+    networks: [borda, interna]
+    depends_on:
+      dockerproxy:
+        condition: service_started
+
+  # O painel precisa listar containers, mas montar /var/run/docker.sock nele
+  # daria root na VM a partir de um servico exposto a internet (§5). Este
+  # proxy expoe somente GET /containers/json.
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Rede sem rota para fora: so o painel alcanca.
+    networks: [interna]
+
+networks:
+  borda:
+  interna:
+    internal: true
+
+volumes:
+  caddy-data:

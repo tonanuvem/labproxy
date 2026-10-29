@@ -1,0 +1,56 @@
+# Template do Caddyfile. O proxy.sh troca __HOST__ pelo nome do aluno e
+# resolve a linha #__AUTH__. O arquivo gerado (Caddyfile) nao e' versionado.
+#
+# Ver §3.1 e §4 do CONTEXTO.md. O roteamento por porta foi validado em §7.
+
+{
+	admin off
+
+	# A 80 e' do apache que ja roda no host da VM, e nao vai sair de la.
+	# Sem isto o Caddy tenta montar o vhost de redirecionamento.
+	auto_https disable_redirects
+}
+
+# Basic auth com a senha da turma. Nao e' identidade: diz "voce esta nesta
+# aula". E' o que impede um scanner da internet de achar o code-server ou a
+# Admin API de alguem pelo nome vazado no Certificate Transparency (§5).
+(protege) {
+	#__AUTH__
+}
+
+# ---------------------------------------------------------------------------
+# <porta>.<aluno>.<zona>  ->  localhost:<porta> da VM
+# ---------------------------------------------------------------------------
+*.__HOST__ {
+	tls /etc/caddy/cert.pem /etc/caddy/key.pem
+	import protege
+
+	@porta header_regexp porta Host ^([0-9]{2,5})\.
+	handle @porta {
+		# O painel e' a autoridade da allowlist: ele le o Docker e diz se
+		# aquela porta foi publicada por um container e nao e' administrativa.
+		# Fail-closed — painel fora do ar significa nenhuma porta liberada.
+		forward_auth painel:8000 {
+			uri /_authz?porta={re.porta.1}
+		}
+
+		reverse_proxy host.docker.internal:{re.porta.1} {
+			# Repassa o Host inalterado, que e' o padrao do Caddy. Apps que
+			# validam Host (NiFi) precisam de ajuste — ver §8.
+			header_up X-Labproxy-Porta {re.porta.1}
+		}
+	}
+
+	handle {
+		redir https://__HOST__/ 302
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Nome base -> painel
+# ---------------------------------------------------------------------------
+__HOST__ {
+	tls /etc/caddy/cert.pem /etc/caddy/key.pem
+	import protege
+	reverse_proxy painel:8000
+}
