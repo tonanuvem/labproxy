@@ -52,6 +52,26 @@ services:
       dockerproxy:
         condition: service_started
 
+  # Tunel SSH sobre a 443, para quando a rede de quem acessa bloqueia a 22.
+  # Desligado por padrao: so sobe com LABPROXY_TUNEL=on, que liga este profile.
+  # Duas travas: --restrict-to prende o tunel ao SSH do host, e nada mais; -r
+  # exige um caminho secreto no upgrade, que o proxy.sh gera por VM.
+  tunel:
+    image: ghcr.io/erebe/wstunnel:v11.1.0
+    restart: unless-stopped
+    profiles: ["tunel"]
+    entrypoint: ["/home/app/wstunnel"]
+    command:
+      - server
+      - ws://0.0.0.0:8080
+      - --restrict-to
+      - host.docker.internal:22
+      - -r
+      - ${LABPROXY_TUNEL_SEGREDO:?o tunel exige LABPROXY_TUNEL_SEGREDO no .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [borda]
+
   # O painel precisa listar containers, mas montar /var/run/docker.sock nele
   # daria root na VM a partir de um servico exposto a internet (§5). Este
   # proxy expoe somente GET /containers/json.

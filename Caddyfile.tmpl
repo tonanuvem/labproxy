@@ -18,7 +18,13 @@
 # ---------------------------------------------------------------------------
 https://__HOST__ {
 	tls /etc/caddy/cert.pem /etc/caddy/key.pem
-	reverse_proxy painel:8000
+
+	# O proxy.sh insere aqui o caminho do tunel SSH, quando ligado (§5).
+	#__TUNEL__
+
+	handle {
+		reverse_proxy painel:8000
+	}
 }
 
 # ---------------------------------------------------------------------------

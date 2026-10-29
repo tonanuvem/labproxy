@@ -15,6 +15,8 @@
 #   LABPROXY_SENHA       senha da protecao (padrao: a senha da turma)
 #   LABPROXY_PROTECAO=on sobe com a protecao ja ligada (padrao: desligada;
 #                        o aluno liga e desliga pelo painel)
+#   LABPROXY_TUNEL=on    abre um tunel SSH sobre a 443, para quando a rede de
+#                        quem acessa bloqueia a porta 22. Desligado por padrao
 #   PORTAS_BLOQUEADAS    portas administrativas extras: "9200,15672"
 #   PORTAS_LIBERADAS     tira da denylist padrao: "8001"
 #
@@ -35,6 +37,7 @@ PROTECAO="${LABPROXY_PROTECAO:-off}"
 CADDY_IMG="${LABPROXY_CADDY_IMG:-caddy:2.10-alpine}"
 # De onde vem a pagina que o apache da VM servia. O Caddy passa a servi-la.
 PAGINA_APACHE="${LABPROXY_PAGINA:-/var/www/html/index.html}"
+TUNEL="${LABPROXY_TUNEL:-off}"
 
 # Tudo que o proxy.sh precisa buscar quando roda por 'curl | bash'.
 # Ao acrescentar um arquivo ao repositorio, acrescente aqui tambem.
@@ -246,13 +249,45 @@ liberar_80() {
   fi
 }
 
+# --------------------------------------------------------------------- tunel
+# SSH por cima da 443, para a rede que bloqueia a 22. E' uma porta de
+# administracao exposta na internet, entao vem desligado e tem duas travas:
+# o wstunnel so aceita destino host.docker.internal:22, e exige um caminho
+# secreto no upgrade. O segredo e' por VM e sobrevive entre execucoes, senao
+# o ~/.ssh/config de quem usa quebraria a cada semana.
+segredo_tunel() {
+  local f="$DIR/.tunel_segredo"
+  if [ ! -s "$f" ]; then
+    (openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n') > "$f"
+    chmod 600 "$f"
+  fi
+  tr -d '[:space:]' < "$f"
+}
+
 # ----------------------------------------------------------------- Caddyfile
 gerar_caddyfile() {
   # A autenticacao nao vive mais aqui: e' do painel (ver §5). O template so
   # precisa do nome do aluno.
-  sed -e "s/__HOST__/$HOST/g" \
-    "$DIR/Caddyfile.tmpl" > "$DIR/Caddyfile" \
-    || erro "falha ao gerar o Caddyfile."
+  local bloco=""
+  if [ "$TUNEL" = "on" ]; then
+    SEGREDO=$(segredo_tunel)
+    bloco=$(printf 'handle /%s/* {\n\t\treverse_proxy tunel:8080\n\t}' "$SEGREDO")
+  fi
+
+  TUNEL_BLOCO="$bloco" HOST="$HOST" python3 -I -c '
+import os
+tmpl = open(os.environ["DIR"] + "/Caddyfile.tmpl").read()
+bloco = os.environ["TUNEL_BLOCO"]
+saida = []
+for linha in tmpl.splitlines():
+    if linha.strip() == "#__TUNEL__":
+        if bloco:
+            saida.append("\t" + bloco)
+        continue
+    saida.append(linha)
+texto = "\n".join(saida).replace("__HOST__", os.environ["HOST"]) + "\n"
+open(os.environ["DIR"] + "/Caddyfile", "w").write(texto)
+' || erro "falha ao gerar o Caddyfile."
 
   # O validate carrega os certificados de verdade, entao eles precisam estar
   # montados nos mesmos caminhos que o Caddy vai usar em producao.
@@ -290,7 +325,15 @@ subir() {
   local inicial=0
   [ "$PROTECAO" = "on" ] && inicial=1
 
+  local perfis="" segredo=""
+  if [ "$TUNEL" = "on" ]; then
+    perfis="tunel"
+    segredo=$(segredo_tunel)
+  fi
+
   cat > "$DIR/.env" <<EOF
+COMPOSE_PROFILES=$perfis
+LABPROXY_TUNEL_SEGREDO=$segredo
 LABPROXY_HOST=$HOST
 LABPROXY_CADDY_IMG=$CADDY_IMG
 LABPROXY_USUARIO=$USUARIO
@@ -347,6 +390,20 @@ if [ "$PROTECAO" = "on" ]; then
 else
   aviso "o lab esta ${N}aberto na internet${F}. Qualquer um que descubra o"
   info "  endereco alcanca suas aplicacoes. Para fechar, use o botao no painel."
+fi
+msg
+if [ "$TUNEL" = "on" ]; then
+  SEGREDO=$(segredo_tunel)
+  msg
+  msg "  ${N}Tunel SSH sobre a 443${F} (para rede que bloqueia a 22):"
+  msg
+  msg "    ssh -o ProxyCommand='wstunnel client -L stdio://host.docker.internal:22 \\"
+  msg "          -P $SEGREDO wss://$HOST' \\"
+  msg "        $(id -un)@$HOST"
+  msg
+  info "  O caminho secreto acima e' a chave: quem o tiver alcanca o SSH desta VM."
+  info "  Com certificado autoassinado o cliente nao valida o servidor; depois do"
+  info "  certificado real, acrescente --tls-verify-certificate."
 fi
 msg
 msg "  Parar:      cd $DIR && docker compose down"

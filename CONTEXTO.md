@@ -457,6 +457,61 @@ host. Um container subido com `-p 127.0.0.1:5432:5432` fica inalcançável
 pelo proxy (502) mesmo respondendo 200 em `localhost` na própria VM. Vale
 documentar como intencional.
 
+### Túnel SSH sobre a 443
+
+**Desligado por padrão.** É uma porta de administração exposta na internet,
+e só existe por um motivo concreto: a rede de quem acessa pode bloquear a
+saída na 22. Foi medido, contra uma VM do lab:
+
+```
+35.168.12.24:22   bloqueada
+35.168.12.24:443  aberta
+35.168.12.24:80   aberta
+```
+
+Quem bloqueia é a rede de quem acessa, não a AWS — o Security Group está
+aberto. Antes de chegar aqui, vale descartar o mal-entendido: `ssh` por
+`22.joao.<zona>` **não funciona e nunca vai funcionar**, por três motivos
+independentes. A 22 está na denylist; o `reverse_proxy` fala HTTP e o
+handshake do SSH não é HTTP (dá 502); e, o decisivo, o cliente `ssh` não lê
+o cabeçalho `Host` — ele resolve o nome e conecta na 22 por padrão, passando
+longe do Caddy. O esquema `<porta>.<nome>` é uma convenção de HTTP.
+
+O que funciona é encapsular SSH em WebSocket, que é HTTP e atravessa o
+Caddy. `LABPROXY_TUNEL=on` sobe um `wstunnel` numa porta interna, e o Caddy
+expõe um caminho na 443 para ele. Duas travas, ambas verificadas:
+
+| Trava | Tentativa | Resultado |
+|---|---|---|
+| caminho secreto (`-r`) | prefixo errado | 404, o Caddy nem roteia |
+| destino fixo (`--restrict-to`) | tunelar para `1.1.1.1:443` | 400, o wstunnel recusa |
+
+O segredo é gerado por VM, fica em `.tunel_segredo` e sobrevive entre
+execuções — senão o `~/.ssh/config` de quem usa quebraria toda semana. Ele
+**é a chave**: quem o tiver alcança o SSH daquela VM.
+
+Do lado de quem acessa:
+
+```
+Host lab
+    HostName joao.aluno.lab.tonanuvem.com
+    User ubuntu
+    ProxyCommand wstunnel client -L stdio://host.docker.internal:22 \
+                   -P <segredo> wss://joao.aluno.lab.tonanuvem.com
+```
+
+O `host.docker.internal:22` parece estranho do lado do cliente, mas é o
+servidor quem resolve esse destino — e é exatamente o que o `--restrict-to`
+autoriza.
+
+Verificado de ponta a ponta com um `sshd` real atrás do túnel:
+`Remote protocol version 2.0, remote software version OpenSSH_10.3`.
+
+**Enquanto o certificado for autoassinado, o cliente não valida o
+servidor** — o `wstunnel` conecta em qualquer coisa por padrão. Depois do
+certificado real, acrescentar `--tls-verify-certificate`. Até lá, o túnel é
+protegido só pelo segredo do caminho.
+
 ### `host.docker.internal` no Linux
 
 Não existe por padrão — é um alias do Docker Desktop. No EC2 Linux exige
@@ -597,7 +652,8 @@ LABPROXY_CERT_URL=https://api.aluno.lab.tonanuvem.com/certificado \
 ```
 
 Variáveis úteis: `LABPROXY_NOME` (pular a descoberta), `LABPROXY_SENHA`,
-`LABPROXY_AUTH=off`, `PORTAS_BLOQUEADAS`, `PORTAS_LIBERADAS`.
+`LABPROXY_PROTECAO=on`, `LABPROXY_TUNEL=on` (§5), `PORTAS_BLOQUEADAS`,
+`PORTAS_LIBERADAS`, `PORTAS_HOST`.
 
 ### O que foi verificado na VM
 
