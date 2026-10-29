@@ -604,12 +604,25 @@ Regra que sai disso: **todo serviço que fala com o host precisa do
    O Lambda do projeto `dns` já é dono dessa zona, já escreve nela e roda com
    uma role que não expira.
 
-   O desenho que cabe: a API implementa o protocolo **`httpreq` do lego** —
-   `POST /present` e `POST /cleanup`, corpo `{"fqdn", "value"}`, autenticados
-   pela senha de instrutor que já existe. O `emitir-cert.sh` troca
-   `--dns route53` por `--dns httpreq` e deixa de precisar de credencial AWS;
-   passa a precisar só da senha de instrutor. Quem emite pode ser qualquer
-   máquina.
+   O desenho que cabe: **uma rota na API que já existe**, reusando o
+   `_eh_admin` (header `x-admin-key`), o `_enviar_ao_route53` e a
+   configuração da zona — nada de serviço novo. `POST /acme/present` e
+   `POST /acme/cleanup`, com o corpo do provider `httpreq` do lego
+   (`{"fqdn", "value"}`), que o lego chama direto sem nenhuma cola.
+
+   **Não pendurar no `/registros`.** As semânticas de posse são diferentes:
+   `/registros` é "um aluno é dono de um alias, provado pelo token", e o TXT
+   do ACME não tem dono aluno — é o instrutor agindo sobre a zona. Misturar
+   obriga a abrir exceção no `_dono_confere` e no `_validar_entrada`.
+
+   Os limites que tornam isso seguro: só `TXT`, só nomes começando com
+   `_acme-challenge.`, só na zona da turma, TTL 60, `present` idempotente,
+   e **nunca** com a senha da turma, que é pública — com ela, qualquer um
+   forjaria validação ACME de qualquer nome da zona.
+
+   O `emitir-cert.sh` então troca `--dns route53` por `--dns httpreq` e
+   deixa de precisar de credencial AWS; passa a precisar só da senha de
+   instrutor, e pode rodar de qualquer máquina.
 
    Isso resolve §6.1 e §6.2 juntos, porque o mesmo serviço que valida o
    token de posse passa a poder guardar e servir o certificado. Encaminhado
