@@ -32,6 +32,17 @@ services:
       DOCKER_API: http://dockerproxy:2375
       PORTAS_BLOQUEADAS: ${PORTAS_BLOQUEADAS:-}
       PORTAS_LIBERADAS: ${PORTAS_LIBERADAS:-}
+      PORTAS_HOST: ${PORTAS_HOST:-}
+      # A senha fica sempre disponivel, mesmo com a protecao desligada: e' o
+      # que permite ao aluno liga-la pela pagina depois.
+      LABPROXY_USUARIO: ${LABPROXY_USUARIO:-aluno}
+      LABPROXY_SENHA: ${LABPROXY_SENHA:-}
+      PROTECAO_INICIAL: ${PROTECAO_INICIAL:-0}
+      DIR_ESTADO: /estado
+    volumes:
+      # Bind mount, nao volume nomeado: o painel roda como nonroot e um volume
+      # nomeado nasce de root. O proxy.sh cria este diretorio gravavel.
+      - ./estado:/estado
     networks: [borda, interna]
     depends_on:
       dockerproxy:

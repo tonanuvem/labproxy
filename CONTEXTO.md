@@ -252,18 +252,46 @@ isto é, execução remota de comandos aberta na internet.
 Não é hipotético: toda emissão ACME é publicada em Certificate
 Transparency, e varredura desses logs encontra os nomes em minutos.
 
-**Resolvido pela primeira opção: basic auth no Caddy com a senha da
-turma**, ligado por padrão. Era a única das três que não depende de nada
-externo — o Security Group do AWS Academy é aberto por desenho, e o
-`forward_auth` contra a API precisaria de um endpoint que não existe.
+**Resolvido por basic auth com a senha da turma — mas desligado por
+padrão, e ligado pelo aluno no painel.** Era a única das três opções que
+não depende de nada externo: o Security Group do AWS Academy é aberto por
+desenho, e o `forward_auth` contra a API precisaria de um endpoint que não
+existe.
 
-O `basic_auth` cobre **as duas** entradas: o painel e todos os
+A proteção cobre **as duas** entradas: o painel e todos os
 subdomínios-porta. Não é identidade, é "você está nesta aula": a senha da
 turma é pública no bundle do frontend. O que ela resolve é o scanner de
 Certificate Transparency, que é o vetor real — não um colega curioso.
 
-`LABPROXY_AUTH=off` desliga, para a aula em que o aluno precisa apontar um
-webhook externo para a própria aplicação. O `proxy.sh` avisa em amarelo.
+**A autenticação não mora no Caddyfile, mora no painel.** Se morasse no
+Caddyfile, ligar e desligar exigiria o painel reescrevendo a config do
+Caddy e recarregando pela admin API. Como o Caddy já consulta o painel a
+cada requisição de porta pelo `forward_auth`, sai mais simples o painel
+ser a autoridade única — de autenticação e de allowlist. Verificado: num
+401 o Caddy devolve a resposta do painel como ela é, então o
+`WWW-Authenticate` chega ao navegador e o prompt aparece.
+
+As regras do botão não são simétricas, de propósito:
+
+- **Ligar não exige credencial.** Com o lab aberto, quem cair na página
+  pode fechá-la, e o pior que isso faz é deixar o lab mais seguro. Não dá
+  para trancar o aluno para fora, porque a senha é sempre a da turma, que
+  ele conhece.
+- **Desligar exige credencial**, senão a proteção não protegeria nada.
+
+O estado vai para disco, num bind mount que o `proxy.sh` cria gravável —
+o painel roda como `nonroot`, e um volume nomeado nasceria de root. Se a
+proteção caísse num `docker compose restart`, o lab ficaria aberto sem
+ninguém perceber.
+
+`LABPROXY_PROTECAO=on` sobe com ela já ligada.
+
+> **O padrão aberto é uma decisão consciente, e cara.** Com a publicação
+> de portas do host (acima), o `code-server` da VM fica alcançável na
+> internet num nome que o Certificate Transparency publica. Se ele roda
+> com `--auth none`, isso é execução remota de comandos sem senha. O
+> painel avisa disso em vermelho, com o botão ao lado. Para uma turma
+> avaliativa, subir com `LABPROXY_PROTECAO=on`.
 
 ### Socket do Docker
 
@@ -364,6 +392,14 @@ VM.
 
 ## 6. Em aberto
 
+0. **Um certificado `*.tonanuvem.com` não serve.** Vale registrar porque
+   a pergunta reaparece. Dois motivos independentes: o curinga de TLS casa
+   **um rótulo só**, então `*.tonanuvem.com` cobre `x.tonanuvem.com` e não
+   chega perto de `8080.joao.aluno.lab.tonanuvem.com`; e um certificado
+   emitido no ACM **não exporta a chave privada**, que só pode ser
+   anexada a ALB, CloudFront ou API Gateway — o Caddy na VM precisa do
+   arquivo. O que serve é o multi-SAN do §3.3, emitido pela Let's Encrypt
+   com DNS-01.
 1. **Distribuição do certificado.** Continua o item crítico. O lado do
    cliente já está pronto e o contrato está em §3.4; falta o endpoint. O
    `proxy.sh` roda sem ele, com autoassinado, o que serve para desenvolver
@@ -518,4 +554,8 @@ O Apache do host seguiu respondendo na 80 durante todo o teste, e nenhum dos
 - A descoberta de portas do host foi escrita depois desse teste e **ainda não
   rodou numa VM**: `go build` e `go vet` passam, mas o comportamento com o
   `code-server` na 8099 precisa ser confirmado em aula.
+- O botão de proteção foi exercitado com a pilha inteira em Docker local,
+  12 de 12: sobe aberto, o aviso vermelho aparece, ligar sem credencial
+  funciona, desligar sem credencial dá 401, o `WWW-Authenticate` atravessa o
+  `forward_auth`, e o estado sobrevive a um `restart` do painel. Em VM, não.
 - NiFi, o contraexemplo de §8, não foi testado atrás do proxy.

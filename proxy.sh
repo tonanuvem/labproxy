@@ -12,8 +12,9 @@
 #   LABPROXY_CERT_URL    endpoint do certificado da turma (§3.4). Deve devolver
 #                        JSON {"cert":"-----BEGIN...","key":"-----BEGIN..."},
 #                        autenticado pelo token de posse em ~/.fiap_dns_token
-#   LABPROXY_SENHA       senha do basic auth (padrao: a senha da turma)
-#   LABPROXY_AUTH=off    desliga o basic auth do painel  -- NAO recomendado
+#   LABPROXY_SENHA       senha da protecao (padrao: a senha da turma)
+#   LABPROXY_PROTECAO=on sobe com a protecao ja ligada (padrao: desligada;
+#                        o aluno liga e desliga pelo painel)
 #   PORTAS_BLOQUEADAS    portas administrativas extras: "9200,15672"
 #   PORTAS_LIBERADAS     tira da denylist padrao: "8001"
 #
@@ -28,14 +29,17 @@ TOKEN_FILE="${DNS_TOKEN_FILE:-$HOME/.fiap_dns_token}"
 CERT_URL="${LABPROXY_CERT_URL:-}"
 SENHA="${LABPROXY_SENHA:-$SENHA_API}"
 USUARIO="${LABPROXY_USUARIO:-aluno}"
-AUTH="${LABPROXY_AUTH:-on}"
+# Desligada por padrao: o lab sobe aberto e o aluno protege pelo painel se
+# quiser. A senha vai junto de qualquer jeito, senao nao havera o que ligar.
+PROTECAO="${LABPROXY_PROTECAO:-off}"
 CADDY_IMG="${LABPROXY_CADDY_IMG:-caddy:2.10-alpine}"
 
 # Tudo que o proxy.sh precisa buscar quando roda por 'curl | bash'.
 # Ao acrescentar um arquivo ao repositorio, acrescente aqui tambem.
 ARQUIVOS="docker-compose.yml Caddyfile.tmpl
 painel/go.mod painel/Dockerfile
-painel/main.go painel/docker.go painel/portas.go painel/host.go painel/html.go"
+painel/main.go painel/docker.go painel/portas.go painel/host.go
+painel/estado.go painel/auth.go painel/html.go"
 
 N=$'\033[1m'; F=$'\033[0m'; V=$'\033[32m'; A=$'\033[33m'; R=$'\033[31m'
 msg()  { printf '%s\n' "$*"; }
@@ -116,7 +120,7 @@ baixar_arquivos() {
   # da' um erro legivel, em vez de um stack trace do compilador la' na frente.
   local n
   n=$(ls "$DIR"/painel/*.go 2>/dev/null | wc -l | tr -d ' ')
-  [ "$n" -ge 5 ] || erro "so $n arquivos .go no painel; esperava 5. Lista desatualizada?"
+  [ "$n" -ge 7 ] || erro "so $n arquivos .go no painel; esperava 7. Lista desatualizada?"
   ok "arquivos em ${DIR}"
 }
 
@@ -184,34 +188,10 @@ obter_cert() {
 
 # ----------------------------------------------------------------- Caddyfile
 gerar_caddyfile() {
-  local bloco=""
-  if [ "$AUTH" = "off" ]; then
-    aviso "basic auth ${N}desligado${F}: o inventario do seu lab fica publico."
-  else
-    local hash
-    hash=$(docker run --rm "$CADDY_IMG" caddy hash-password --plaintext "$SENHA" 2>/dev/null) \
-      || erro "falha ao gerar o hash da senha com $CADDY_IMG"
-    bloco=$(printf 'basic_auth {\n\t\t%s %s\n\t}' "$USUARIO" "$hash")
-  fi
-
-  AUTH_BLOCO="$bloco" HOST="$HOST" python3 -I -c '
-import os, sys
-tmpl = open(os.environ["DIR"] + "/Caddyfile.tmpl").read()
-bloco = os.environ["AUTH_BLOCO"]
-out = []
-for linha in tmpl.splitlines():
-    if linha.strip() == "#__AUTH__":
-        if bloco:
-            out.append("\t" + bloco)
-        continue
-    out.append(linha)
-texto = "\n".join(out) + "\n"
-if not bloco:
-    # Sem auth o snippet fica vazio; Caddy nao aceita import de snippet vazio.
-    texto = texto.replace("(protege) {\n}\n\n", "").replace("\timport protege\n", "")
-texto = texto.replace("__HOST__", os.environ["HOST"])
-open(os.environ["DIR"] + "/Caddyfile", "w").write(texto)
-' || erro "falha ao gerar o Caddyfile."
+  # A autenticacao nao vive mais aqui: e' do painel (ver §5). O template so
+  # precisa do nome do aluno.
+  sed "s/__HOST__/$HOST/g" "$DIR/Caddyfile.tmpl" > "$DIR/Caddyfile" \
+    || erro "falha ao gerar o Caddyfile."
 
   # O validate carrega os certificados de verdade, entao eles precisam estar
   # montados nos mesmos caminhos que o Caddy vai usar em producao.
@@ -242,12 +222,24 @@ checar_443() {
 }
 
 subir() {
+  # O painel roda como nonroot e precisa gravar aqui se o aluno ligar a
+  # protecao. Um volume nomeado nasceria de root, por isso um diretorio nosso.
+  mkdir -p "$DIR/estado" && chmod 0777 "$DIR/estado"
+
+  local inicial=0
+  [ "$PROTECAO" = "on" ] && inicial=1
+
   cat > "$DIR/.env" <<EOF
 LABPROXY_HOST=$HOST
 LABPROXY_CADDY_IMG=$CADDY_IMG
+LABPROXY_USUARIO=$USUARIO
+LABPROXY_SENHA=$SENHA
+PROTECAO_INICIAL=$inicial
 PORTAS_BLOQUEADAS=${PORTAS_BLOQUEADAS:-}
 PORTAS_LIBERADAS=${PORTAS_LIBERADAS:-}
+PORTAS_HOST=${PORTAS_HOST:-}
 EOF
+  chmod 600 "$DIR/.env"
   ( cd "$DIR" && docker compose up -d --build ) \
     || erro "o 'docker compose up' falhou. Veja: cd $DIR && docker compose logs"
 }
@@ -259,6 +251,7 @@ verificar() {
            --resolve "$HOST:443:127.0.0.1" "https://$HOST/" 2>/dev/null) || code=000
     case "$code" in
       200|401) ok "proxy respondendo na 443 (HTTP $code)"; return 0 ;;
+      403)     ok "proxy respondendo na 443 (HTTP 403)"; return 0 ;;
     esac
     sleep 2
   done
@@ -286,8 +279,12 @@ verificar
 msg
 msg "  ${N}Painel:${F}  https://$HOST/"
 msg "  ${N}Um app:${F}  https://<porta>.$HOST/   (ex: https://8080.$HOST/)"
-if [ "$AUTH" != "off" ]; then
-  msg "  ${N}Login:${F}   usuario '$USUARIO', a senha da turma"
+msg
+if [ "$PROTECAO" = "on" ]; then
+  msg "  ${N}Protecao:${F} ligada — usuario '$USUARIO', a senha da turma"
+else
+  aviso "o lab esta ${N}aberto na internet${F}. Qualquer um que descubra o"
+  info "  endereco alcanca suas aplicacoes. Para fechar, use o botao no painel."
 fi
 msg
 msg "  Parar:      cd $DIR && docker compose down"
