@@ -51,6 +51,13 @@ services:
       # Bind mount, nao volume nomeado: o painel roda como nonroot e um volume
       # nomeado nasce de root. O proxy.sh cria este diretorio gravavel.
       - ./estado:/estado
+    extra_hosts:
+      # O painel disca para host.docker.internal:<porta> para descobrir o que
+      # roda fora do Docker (code-server, npm run dev). Sem este alias a
+      # discagem falha na resolucao e TODA porta de processo do host e'
+      # negada, em silencio. No Docker Desktop o alias existe sozinho em
+      # qualquer container, entao o teste local nao pega a falta dele.
+      - "host.docker.internal:host-gateway"
     networks: [borda, interna]
     depends_on:
       dockerproxy:

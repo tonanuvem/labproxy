@@ -554,11 +554,21 @@ Não existe por padrão — é um alias do Docker Desktop. No EC2 Linux exige
 `docker0` (172.17.0.1), e funciona mesmo com o Caddy numa rede bridge
 própria do compose.
 
-**Não validar este projeto no Docker Desktop do macOS.** Lá
-`host.docker.internal` passa pela VM do Docker, e uma porta publicada só
-em `127.0.0.1` *é* alcançável pelo proxy — o oposto do que acontece na
-EC2. O teste local chegou a dar esse falso resultado antes de rodar na
-VM.
+**Não validar este projeto no Docker Desktop do macOS.** Ele mente de duas
+formas, e as duas já custaram caro:
+
+1. Uma porta publicada só em `127.0.0.1` *é* alcançável pelo proxy lá, o
+   oposto do que acontece na EC2. O teste local deu esse falso resultado
+   antes de rodar na VM.
+2. O alias `host.docker.internal` existe em **todo** container
+   automaticamente, sem `extra_hosts`. No Linux ele só existe onde foi
+   declarado. O `painel` ficou sem a declaração e a descoberta de portas do
+   host nunca funcionou na VM — toda porta de processo fora do Docker era
+   negada, em silêncio, enquanto os containers apareciam normalmente. O
+   teste local passava, porque lá o alias estava lá de graça.
+
+Regra que sai disso: **todo serviço que fala com o host precisa do
+`extra_hosts` explícito**, e isso não se verifica no macOS.
 
 ## 6. Em aberto
 
