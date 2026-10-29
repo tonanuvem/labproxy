@@ -257,6 +257,7 @@ para rodar o lab inteiro assim; o navegador reclama uma vez.
 
 ```
 labproxy/
+├── emitir-cert.sh         # lado do INSTRUTOR: emite o certificado da turma
 ├── docker-compose.yml     # caddy + painel + dockerproxy
 ├── Caddyfile.tmpl         # template; o Caddyfile gerado não é versionado
 ├── painel/
@@ -591,9 +592,11 @@ Regra que sai disso: **todo serviço que fala com o host precisa do
    certificado que ele tem em mão expira em menos de 7 dias, e um
    `proxy.sh` rodado de novo troca o certificado — mas ninguém hoje dispara
    isso sozinho.
-3. **Emissão do certificado da turma.** Não há script para o lado do
-   instrutor: o multi-SAN de §3.3 ainda é feito à mão, com DNS-01 a partir
-   da sua máquina ou do CloudShell.
+3. ~~**Emissão do certificado da turma.**~~ **Feito:** `emitir-cert.sh`,
+   do lado do instrutor. Pede `*.<turma>.lab.tonanuvem.com` à Let's Encrypt
+   por DNS-01 no Route 53, rodando o `lego` em Docker. Usa o staging por
+   padrão; `--producao` emite de verdade. Falta rodar com credencial válida:
+   as da máquina estavam expiradas quando foi escrito.
 4. **Turmas novas.** Adicionar um aluno exige reemitir o certificado da
    turma. Aceitável se a lista for conhecida no início; se o aluno
    escolhe o nome em sala, não é.
@@ -752,8 +755,10 @@ Dois defeitos que só apareceram aqui, e nenhum deles apareceria no macOS:
 ### O que ainda não foi exercitado
 
 - Nenhuma emissão real da Let's Encrypt: todo o teste correu com
-  autoassinado. O caminho do `LABPROXY_CERT_URL` tem o cliente escrito, mas
-  nunca falou com um endpoint de verdade (§6.1). É o que resta de crítico.
+  autoassinado. O `emitir-cert.sh` existe e para no lugar certo sem
+  credencial, mas nunca chegou a falar com a Let's Encrypt — nem no staging,
+  porque as credenciais da máquina estavam expiradas. É o que resta de
+  crítico, e é o único passo entre o lab e o HTTPS sem aviso.
 - A **descoberta automática do nome** depende de `GET /registros` da API da
   turma, que passou a devolver **500** no fim de 2026-10-29. Enquanto não
   voltar, o `proxy.sh` precisa de `LABPROXY_NOME=<nome>`, e o `dns.sh` do
