@@ -723,24 +723,42 @@ de API Gateway inteiro no ar (13 containers), medindo de fora pela internet.
 O Apache do host seguiu respondendo na 80 durante todo o teste, e nenhum dos
 13 containers do lab foi tocado.
 
+### Validado na VM
+
+Em 2026-10-29, na VM `teste5.aluno.lab.tonanuvem.com` (`fiaplab-1-aluno`,
+Ubuntu), com o lab de observabilidade inteiro no ar. Medido de fora, pela
+internet:
+
+| | |
+|---|---|
+| painel em HTTPS | 200 |
+| `code-server` na 8099, processo **fora do Docker** | 302 para `/login` |
+| aplicação em container, 3000 | 200 |
+| porta 22 | 403 |
+| Admin API do Kong, 8001 | 403 |
+| página de atalhos pelo IP | servida pelo Caddy, idêntica à do Apache |
+| túnel SSH na 443, com `.pem` | entra, da rede que bloqueia a 22 |
+
+O `curl | bash` a partir do GitHub é o caminho que foi usado o tempo todo.
+
+Dois defeitos que só apareceram aqui, e nenhum deles apareceria no macOS:
+
+1. O serviço `painel` estava **sem `extra_hosts`**, então a descoberta de
+   portas do host nunca funcionou na VM — em silêncio, porque os containers
+   continuavam aparecendo. Era o motivo do 403 na 8099.
+2. O `docker compose up -d` **não recria o Caddy** quando só o `Caddyfile`
+   muda, por ser bind mount. Ligar o túnel não tinha efeito nenhum.
+
 ### O que ainda não foi exercitado
 
 - Nenhuma emissão real da Let's Encrypt: todo o teste correu com
   autoassinado. O caminho do `LABPROXY_CERT_URL` tem o cliente escrito, mas
-  nunca falou com um endpoint de verdade (§6.1).
-- O `curl | bash` a partir do GitHub **foi exercitado** em 2026-10-29, numa
-  segunda VM (`teste5.aluno.lab.tonanuvem.com`), por quem não tinha os
-  arquivos em mãos: subiu os 3 serviços e o painel respondeu com o
-  `basic_auth` de pé. É o caminho que o aluno vai usar.
-- A descoberta de portas do host foi escrita depois desse teste e **ainda não
-  rodou numa VM**: `go build` e `go vet` passam, mas o comportamento com o
-  `code-server` na 8099 precisa ser confirmado em aula.
-- O desenho do §3.5 — painel HTTPS, aplicações HTTP — foi exercitado com a
-  pilha inteira em Docker local, 14 de 14, com a página real do lab servida
-  pelo IP. Em VM, não: a rede do instrutor passou a bloquear SSH e 443 para
-  as VMs no meio da sessão.
+  nunca falou com um endpoint de verdade (§6.1). É o que resta de crítico.
+- A **descoberta automática do nome** depende de `GET /registros` da API da
+  turma, que passou a devolver **500** no fim de 2026-10-29. Enquanto não
+  voltar, o `proxy.sh` precisa de `LABPROXY_NOME=<nome>`, e o `dns.sh` do
+  aluno também está afetado. O problema é no repositório `dns`, não aqui.
 - O botão de proteção foi exercitado com a pilha inteira em Docker local,
-  12 de 12: sobe aberto, o aviso vermelho aparece, ligar sem credencial
-  funciona, desligar sem credencial dá 401, o `WWW-Authenticate` atravessa o
-  `forward_auth`, e o estado sobrevive a um `restart` do painel. Em VM, não.
+  12 de 12, incluindo o `WWW-Authenticate` atravessando o `forward_auth` e o
+  estado sobrevivendo a um `restart`. Em VM, não.
 - NiFi, o contraexemplo de §8, não foi testado atrás do proxy.
