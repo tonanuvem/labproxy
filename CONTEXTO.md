@@ -68,7 +68,7 @@ roteamento por porta **dentro do próprio arquivo de configuração**:
 
 ```caddyfile
 {
-    auto_https disable_redirects   # a 80 é do Apache que já roda na VM
+    auto_https disable_redirects   # as aplicacoes sao HTTP de proposito (§3.5)
 }
 
 *.joao.aluno.lab.tonanuvem.com {
@@ -533,7 +533,8 @@ internet e pelo DNS real, sem `--resolve`.
 **O desenho de §3.1 se sustenta.** O que o teste mudou neste documento:
 
 1. §3.1 — o `header_regexp` deixa de ser hipótese.
-2. §4 — o Caddy escuta só a 443; a 80 é do Apache.
+2. §4 — o Caddy escuta só a 443; a 80 é do Apache. *(Revisto depois pelo
+   §3.5: hoje ele escuta as duas, e o Apache saiu.)*
 3. §5 — a allowlist de portas subiu de "camada seguinte" para
    obrigatória, por causa da Admin API do Kong.
 4. §3.2 — o curinga de um rótulo só virou limite documentado.
