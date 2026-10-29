@@ -490,22 +490,30 @@ O segredo é gerado por VM, fica em `.tunel_segredo` e sobrevive entre
 execuções — senão o `~/.ssh/config` de quem usa quebraria toda semana. Ele
 **é a chave**: quem o tiver alcança o SSH daquela VM.
 
-Do lado de quem acessa:
+Do lado de quem acessa, `brew install wstunnel` (ou o binário dos releases)
+e um bloco no `~/.ssh/config`:
 
 ```
 Host lab
     HostName joao.aluno.lab.tonanuvem.com
     User ubuntu
+    IdentityFile ~/caminho/labsuser.pem
     ProxyCommand wstunnel client -L stdio://host.docker.internal:22 \
                    -P <segredo> wss://joao.aluno.lab.tonanuvem.com
 ```
+
+Depois disso é `ssh lab`, e `scp`, `rsync` e `ssh -L` funcionam por cima
+dele como de costume: o túnel é transparente no nível TCP, e o `ssh` não
+sabe que existe. **A chave `.pem` é usada exatamente como no acesso
+direto** — o túnel troca o transporte, não a autenticação.
 
 O `host.docker.internal:22` parece estranho do lado do cliente, mas é o
 servidor quem resolve esse destino — e é exatamente o que o `--restrict-to`
 autoriza.
 
-Verificado de ponta a ponta com um `sshd` real atrás do túnel:
-`Remote protocol version 2.0, remote software version OpenSSH_10.3`.
+Verificado de ponta a ponta com um `sshd` real atrás do túnel, autenticando
+por chave e rodando um comando: `OK: ubuntu@d09bdcfd5870 -- cheguei pelo
+túnel`. O mesmo `ssh -i` funciona com e sem o `ProxyCommand`.
 
 **Enquanto o certificado for autoassinado, o cliente não valida o
 servidor** — o `wstunnel` conecta em qualquer coisa por padrão. Depois do
