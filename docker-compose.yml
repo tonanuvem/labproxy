@@ -6,13 +6,17 @@ services:
   caddy:
     image: ${LABPROXY_CADDY_IMG:-caddy:2.10-alpine}
     restart: unless-stopped
-    # So a 443. A 80 fica com o apache do host (§4).
+    # A 443 serve o painel; a 80 serve as aplicacoes em HTTP e repassa o
+    # resto ao apache, que o proxy.sh move para outra porta (§4).
     ports:
+      - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./cert/cert.pem:/etc/caddy/cert.pem:ro
       - ./cert/key.pem:/etc/caddy/key.pem:ro
+      # A pagina de atalhos que o apache da VM servia, copiada pelo proxy.sh.
+      - ./publico:/srv/publico:ro
       - caddy-data:/data
     extra_hosts:
       # Nao existe por padrao no Linux; sem isto o reverse_proxy nao acha o

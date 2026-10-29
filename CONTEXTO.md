@@ -130,11 +130,25 @@ neste desenho.
 ### 3.3 Um certificado multi-SAN por turma, emitido pelo instrutor
 
 O limite de emissão da Let's Encrypt é contado **por domínio registrado**
-— `tonanuvem.com` — e não por aluno. São da ordem de 50 certificados por
-semana para todas as turmas somadas (confirmar o número atual; a Let's
-Encrypt alterou a estrutura de limites em 2025). Como a VM é recriada
+— `tonanuvem.com` — e não por aluno. Conferido na documentação em
+2026-10-29: **50 certificados a cada 7 dias** por domínio registrado,
+**100 identificadores** por certificado, e **5 por conjunto exato de nomes**
+a cada 7 dias, este sem exceção possível.
+
+Delegar uma zona por turma **não multiplica** o limite de 50: o domínio
+registrado é calculado pela Public Suffix List, e `turma1.lab.tonanuvem.com`
+e `turma2.lab.tonanuvem.com` caem no mesmo balde. Delegar por turma é bom
+por isolamento operacional, não por limite. E vale separar dois números que
+se confundem: o teto de **100 nomes** limita quantos alunos cabem num
+certificado; o de **50 por semana** limita quantas *emissões* você faz, e
+não tem relação com o número de alunos. Como a VM é recriada
 semanalmente, qualquer desenho com emissão por aluno estoura o balde em
 poucas semanas e trava a emissão para a organização inteira.
+
+> **Desatualizado pelo §3.5.** Desde que as aplicações passaram a ser HTTP,
+> o certificado cobre apenas o nome do painel, e um
+> `*.<turma>.lab.tonanuvem.com` dá conta de todos os alunos. O que segue
+> continua valendo como registro de por que não há emissão por aluno.
 
 Solução: **um certificado só, com um SAN curinga por aluno.**
 
@@ -161,6 +175,59 @@ Consequências, todas boas:
 O preço: a chave privada é a mesma em todas as VMs, então um aluno pode
 apresentar-se como o host de um colega. Num lab entre colegas isso é
 aceitável; num ambiente avaliativo, não. **Decisão consciente.**
+
+### 3.5 Painel em HTTPS, aplicações em HTTP
+
+Esta decisão veio depois das outras e encolheu o problema, então vale ler
+antes do §3.3 e do §3.4 — ela reduz os dois.
+
+A pergunta que a provocou foi: dá para redirecionar de HTTPS para HTTP e
+escapar do aviso de certificado? **Não dá, e isso foi medido.** O handshake
+TLS acontece antes de qualquer byte de HTTP, então o navegador valida o
+certificado antes de poder receber um redirect:
+
+```
+(OUT) TLS handshake, Client hello
+(IN)  TLS handshake, Server hello
+(IN)  TLS handshake, Certificate
+      SSL certificate problem: self signed certificate   ← morre aqui
+```
+
+Nenhum `> GET` no trace: a requisição nunca foi enviada, então o 301 nunca
+existiu. É o propósito do TLS — quem você não autenticou não pode te mandar
+embora.
+
+Mas a pergunta levou a outra: **o certificado só precisava do curinga por
+aluno porque as portas eram HTTPS.** Com as aplicações em HTTP:
+
+| | |
+|---|---|
+| `https://joao.aluno.lab.tonanuvem.com` | painel, coberto por `*.aluno.lab.tonanuvem.com` |
+| `http://3000.joao.aluno.lab.tonanuvem.com` | aplicação, sem certificado nenhum |
+
+O que isso muda:
+
+- **Um SAN por turma, para sempre.** Acabou o `1 + N`. Aluno novo não exige
+  reemissão, o antigo §6.4 some, e a emissão sequencial de N desafios
+  DNS-01 vira um desafio só.
+- **O nome do aluno sai do Certificate Transparency.** Antes cada
+  `*.joao.aluno...` era publicado; agora só o curinga da turma aparece. O
+  vetor de descoberta que motivou o §5 enfraquece bastante.
+- **O autoassinado passa a ser usável.** Cobre um nome só, então o aluno
+  clica no aviso do navegador uma vez, não uma vez por aplicação — que era a
+  pior parte de viver sem certificado real.
+
+O preço, e é real:
+
+- As aplicações ficam fora de *secure context*: service worker, área de
+  transferência, câmera e afins não funcionam, e o navegador marca campo de
+  senha como "Não seguro".
+- **Não resolve o §1.** Navegador em HTTPS-Only continua interceptando a
+  navegação para `http://`. Isto reduz o problema do certificado ao mínimo;
+  não elimina o atrito do HTTPS-Only.
+- Com a proteção ligada, a senha viaja em texto claro nas aplicações. Como
+  é a senha pública da turma, perde-se pouco — ela existe para afastar
+  varredura, não para guardar segredo. O painel diz isso na página.
 
 ### 3.4 Distribuição do certificado
 
@@ -208,14 +275,28 @@ módulos, e menos código de terceiros num serviço exposto à internet é
 melhor.
 
 **Caddy** — imagem oficial, sem build custom (não há ACME, logo não há
-plugin de DNS). **Escuta só a 443.**
+plugin de DNS). **Escuta a 443 e a 80.**
 
-A 80 fica com o Apache que já roda no host da VM do lab, e que não vai
-sair de lá. Consequências: não publicar a 80 no compose, e desligar o
-redirect automático com `auto_https disable_redirects`, senão o Caddy
-tenta montar o vhost de redirecionamento. O navegador com HTTPS-Only vai
-direto ao HTTPS, que era o problema do §1; quem digitar `http://` na mão
-cai no Apache, não no proxy.
+A 443 serve só o painel, e é o único lugar com certificado. A 80 serve as
+aplicações, pelo roteamento por porta, e entrega todo o resto — o IP cru,
+nomes de fora da zona — à página de atalhos do lab.
+
+**Sobre o Apache.** Ele já rodava na VM ocupando a 80, e a primeira versão
+disto o movia para o loopback, editando `ports.conf` e os vhosts. Era
+remendo demais, e frágil: no Ubuntu é `apache2`, no Amazon Linux é `httpd`,
+com caminhos diferentes. Olhando o Ansible que provisiona a VM, ele serve
+**um único arquivo estático** — a página de atalhos, baixada de
+`tonanuvem.github.io/page/docs/open.html` para `/var/www/html/index.html`
+nas duas distribuições. Não há estado nem configuração a preservar.
+
+Então o `proxy.sh` copia essa página, para o Apache com um
+`systemctl disable --now`, e o Caddy serve o mesmo arquivo na 80. Quem
+chegava pelo IP vê exatamente o que via antes. Uma linha, igual nas duas
+distribuições, e desfazer é outra linha.
+
+`auto_https disable_redirects` continua obrigatório, agora por outro
+motivo: as aplicações são HTTP **de propósito**, e sem isso o Caddy
+redirecionaria todas para HTTPS e desfaria o desenho do §3.5.
 
 **Painel (Go)** — serviço interno na 8000. Lê o socket do Docker, lista
 containers e portas publicadas, e devolve uma página com links
@@ -392,14 +473,13 @@ VM.
 
 ## 6. Em aberto
 
-0. **Um certificado `*.tonanuvem.com` não serve.** Vale registrar porque
-   a pergunta reaparece. Dois motivos independentes: o curinga de TLS casa
+0. **Um certificado `*.tonanuvem.com` não serve.** Vale registrar porque a
+   pergunta reaparece. Dois motivos independentes: o curinga de TLS casa
    **um rótulo só**, então `*.tonanuvem.com` cobre `x.tonanuvem.com` e não
-   chega perto de `8080.joao.aluno.lab.tonanuvem.com`; e um certificado
-   emitido no ACM **não exporta a chave privada**, que só pode ser
-   anexada a ALB, CloudFront ou API Gateway — o Caddy na VM precisa do
-   arquivo. O que serve é o multi-SAN do §3.3, emitido pela Let's Encrypt
-   com DNS-01.
+   chega perto de `joao.aluno.lab.tonanuvem.com`; e um certificado emitido
+   no ACM **não exporta a chave privada**, que só pode ser anexada a ALB,
+   CloudFront ou API Gateway — o Caddy na VM precisa do arquivo. O que serve
+   é `*.<turma>.lab.tonanuvem.com` pela Let's Encrypt com DNS-01 (§3.5).
 1. **Distribuição do certificado.** Continua o item crítico. O lado do
    cliente já está pronto e o contrato está em §3.4; falta o endpoint. O
    `proxy.sh` roda sem ele, com autoassinado, o que serve para desenvolver
@@ -554,6 +634,10 @@ O Apache do host seguiu respondendo na 80 durante todo o teste, e nenhum dos
 - A descoberta de portas do host foi escrita depois desse teste e **ainda não
   rodou numa VM**: `go build` e `go vet` passam, mas o comportamento com o
   `code-server` na 8099 precisa ser confirmado em aula.
+- O desenho do §3.5 — painel HTTPS, aplicações HTTP — foi exercitado com a
+  pilha inteira em Docker local, 14 de 14, com a página real do lab servida
+  pelo IP. Em VM, não: a rede do instrutor passou a bloquear SSH e 443 para
+  as VMs no meio da sessão.
 - O botão de proteção foi exercitado com a pilha inteira em Docker local,
   12 de 12: sobe aberto, o aviso vermelho aparece, ligar sem credencial
   funciona, desligar sem credencial dá 401, o `WWW-Authenticate` atravessa o

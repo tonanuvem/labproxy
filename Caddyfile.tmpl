@@ -1,42 +1,39 @@
 # Template do Caddyfile. O proxy.sh troca __HOST__ pelo nome do aluno. O
 # arquivo gerado (Caddyfile) nao e' versionado.
 #
-# Ver §3.1 e §4 do CONTEXTO.md. O roteamento por porta foi validado em §7.
-#
-# Nao ha autenticacao aqui. Ela vive no painel, porque o aluno liga e desliga
-# a protecao pela pagina, e mexer neste arquivo em tempo de execucao exigiria
-# o painel reescrevendo a config do Caddy e recarregando pela admin API. Como
-# o Caddy ja consulta o painel a cada requisicao de porta, sai mais simples o
-# painel ser a autoridade unica. Ver §5.
+# Desenho: painel em HTTPS, aplicacoes em HTTP. Ver §3.5 do CONTEXTO.md.
+# O certificado passa a cobrir um nome so — o do painel — porque as portas
+# nao sao mais servidas por TLS. Um SAN por turma, para sempre.
 
 {
 	admin off
 
-	# A 80 e' do apache que ja roda no host da VM, e nao vai sair de la.
-	# Sem isto o Caddy tenta montar o vhost de redirecionamento.
+	# As aplicacoes sao HTTP de proposito. Sem isto o Caddy redireciona
+	# tudo para HTTPS e o desenho inteiro se desfaz.
 	auto_https disable_redirects
 }
 
 # ---------------------------------------------------------------------------
-# <porta>.<aluno>.<zona>  ->  localhost:<porta> da VM
+# HTTPS, so o painel. Unico lugar que precisa de certificado.
 # ---------------------------------------------------------------------------
-*.__HOST__ {
+https://__HOST__ {
 	tls /etc/caddy/cert.pem /etc/caddy/key.pem
+	reverse_proxy painel:8000
+}
 
+# ---------------------------------------------------------------------------
+# HTTP: <porta>.<aluno>.<zona>  ->  localhost:<porta> da VM
+# ---------------------------------------------------------------------------
+http://*.__HOST__ {
 	@porta header_regexp porta Host ^([0-9]{2,5})\.
 	handle @porta {
-		# O painel decide duas coisas de uma vez: se quem pede esta
-		# autenticado (quando a protecao esta ligada) e se aquela porta pode
-		# ser proxyada. Num 401 ou 403 o Caddy devolve a resposta do painel
-		# como ela e', entao o WWW-Authenticate chega ao navegador.
-		# Fail-closed: painel fora do ar significa nenhuma porta liberada.
+		# O painel decide se quem pede esta autenticado (quando a protecao
+		# esta ligada) e se a porta pode ser proxyada. Fail-closed.
 		forward_auth painel:8000 {
 			uri /_authz?porta={re.porta.1}
 		}
 
 		reverse_proxy host.docker.internal:{re.porta.1} {
-			# Repassa o Host inalterado, que e' o padrao do Caddy. Apps que
-			# validam Host (NiFi) precisam de ajuste — ver §8.
 			header_up X-Labproxy-Porta {re.porta.1}
 		}
 	}
@@ -47,9 +44,19 @@
 }
 
 # ---------------------------------------------------------------------------
-# Nome base -> painel. Ele cuida da propria autenticacao.
+# HTTP no nome base: sobe para o painel, que e' HTTPS.
 # ---------------------------------------------------------------------------
-__HOST__ {
-	tls /etc/caddy/cert.pem /etc/caddy/key.pem
-	reverse_proxy painel:8000
+http://__HOST__ {
+	redir https://__HOST__{uri} 301
+}
+
+# ---------------------------------------------------------------------------
+# Qualquer outra coisa na 80 — o IP cru, nomes de fora da zona — recebe a
+# pagina de atalhos que o apache da VM servia. O proxy.sh a copia de
+# /var/www/html/index.html antes de parar o apache, entao quem chegava por IP
+# ve exatamente o mesmo de antes.
+# ---------------------------------------------------------------------------
+:80 {
+	root * /srv/publico
+	file_server
 }

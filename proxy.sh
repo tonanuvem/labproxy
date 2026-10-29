@@ -33,6 +33,8 @@ USUARIO="${LABPROXY_USUARIO:-aluno}"
 # quiser. A senha vai junto de qualquer jeito, senao nao havera o que ligar.
 PROTECAO="${LABPROXY_PROTECAO:-off}"
 CADDY_IMG="${LABPROXY_CADDY_IMG:-caddy:2.10-alpine}"
+# De onde vem a pagina que o apache da VM servia. O Caddy passa a servi-la.
+PAGINA_APACHE="${LABPROXY_PAGINA:-/var/www/html/index.html}"
 
 # Tudo que o proxy.sh precisa buscar quando roda por 'curl | bash'.
 # Ao acrescentar um arquivo ao repositorio, acrescente aqui tambem.
@@ -127,10 +129,14 @@ baixar_arquivos() {
 # --------------------------------------------------------------- certificado
 # §3.3: um certificado multi-SAN por turma, emitido pelo instrutor. Nenhuma VM
 # de aluno fala com a Let's Encrypt nem precisa de credencial AWS.
+# Desde que as aplicacoes passaram a ser HTTP, o certificado so precisa
+# cobrir o nome do painel. Serve o nome exato, ou o curinga da turma — que e'
+# um SAN so para todos os alunos. Ver §3.5.
 san_cobre() {
-  local host="$1" sans
+  local host="$1" pai="${1#*.}" sans
   sans=$(openssl x509 -in "$DIR/cert/cert.pem" -noout -ext subjectAltName 2>/dev/null) || return 1
-  printf '%s' "$sans" | grep -qF "DNS:*.$host" && printf '%s' "$sans" | grep -qF "DNS:$host"
+  printf '%s' "$sans" | grep -qF "DNS:$host" && return 0
+  printf '%s' "$sans" | grep -qF "DNS:*.$pai"
 }
 
 buscar_cert_api() {
@@ -159,9 +165,11 @@ open(d + "/cert/key.pem", "w").write(k)
 }
 
 gerar_autoassinado() {
+  # Um nome so: o do painel. O aluno passa pelo aviso do navegador uma vez,
+  # nao uma vez por aplicacao como acontecia quando as portas eram HTTPS.
   openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
     -keyout "$DIR/cert/key.pem" -out "$DIR/cert/cert.pem" \
-    -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST,DNS:*.$HOST" >/dev/null 2>&1 \
+    -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST" >/dev/null 2>&1 \
     || erro "openssl falhou ao gerar o certificado."
   chmod 600 "$DIR/cert/key.pem"
 }
@@ -183,14 +191,67 @@ obter_cert() {
   openssl x509 -in "$DIR/cert/cert.pem" -noout -checkend 604800 >/dev/null 2>&1 \
     || aviso "o certificado expira em menos de 7 dias."
   san_cobre "$HOST" \
-    || aviso "o certificado nao cobre *.$HOST — o HTTPS vai falhar nos subdominios."
+    || aviso "o certificado nao cobre $HOST — o painel vai dar erro no navegador."
+}
+
+# ------------------------------------------------------------------ porta 80
+# O Caddy precisa da 80 para servir as aplicacoes em HTTP.
+#
+# O que havia la' era um apache servindo UM arquivo estatico: a pagina de
+# atalhos do lab, baixada na provisao. Nao ha estado nem configuracao a
+# preservar, entao em vez de remendar a config do apache — que e' apache2 no
+# Ubuntu e httpd no Amazon Linux, com caminhos diferentes — o Caddy assume a
+# porta e serve a mesma pagina. Uma linha de systemctl, revertivel, igual nas
+# duas distribuicoes.
+
+parar_apache() {
+  local unidade parou=""
+  for unidade in apache2 httpd; do
+    if systemctl is-active --quiet "$unidade" 2>/dev/null; then
+      sudo systemctl disable --now "$unidade" >/dev/null 2>&1 \
+        && parou="$unidade"
+    fi
+  done
+  [ -n "$parou" ] && ok "$parou parado; o Caddy assume a 80 e serve a mesma pagina"
+  return 0
+}
+
+capturar_pagina() {
+  mkdir -p "$DIR/publico"
+  if [ -f "$PAGINA_APACHE" ]; then
+    cp "$PAGINA_APACHE" "$DIR/publico/index.html" 2>/dev/null \
+      && ok "pagina de atalhos preservada de $PAGINA_APACHE"
+  fi
+  # Sem a pagina original, manda quem chegar pelo IP para o painel.
+  if [ ! -f "$DIR/publico/index.html" ]; then
+    cat > "$DIR/publico/index.html" <<HTML
+<!doctype html><html lang="pt-BR"><meta charset="utf-8">
+<title>Lab</title>
+<meta http-equiv="refresh" content="0; url=https://$HOST/">
+<p>Indo para <a href="https://$HOST/">$HOST</a>.</p>
+</html>
+HTML
+    info "sem $PAGINA_APACHE: a 80 vai mandar para o painel"
+  fi
+}
+
+liberar_80() {
+  capturar_pagina
+  parar_apache
+  local quem
+  quem=$(sudo -n ss -ltnp 2>/dev/null | awk '$4 ~ /(^|:)80$/ {print $6}' | head -1)
+  if [ -n "$quem" ] && ! printf '%s' "$quem" | grep -q docker; then
+    erro "a porta 80 continua ocupada por: $quem
+       O labproxy precisa dela para servir as aplicacoes em HTTP."
+  fi
 }
 
 # ----------------------------------------------------------------- Caddyfile
 gerar_caddyfile() {
   # A autenticacao nao vive mais aqui: e' do painel (ver §5). O template so
   # precisa do nome do aluno.
-  sed "s/__HOST__/$HOST/g" "$DIR/Caddyfile.tmpl" > "$DIR/Caddyfile" \
+  sed -e "s/__HOST__/$HOST/g" \
+    "$DIR/Caddyfile.tmpl" > "$DIR/Caddyfile" \
     || erro "falha ao gerar o Caddyfile."
 
   # O validate carrega os certificados de verdade, entao eles precisam estar
@@ -271,14 +332,15 @@ msg
 baixar_arquivos
 obter_cert
 gerar_caddyfile
+liberar_80
 checar_443
 msg
 subir
 msg
 verificar
 msg
-msg "  ${N}Painel:${F}  https://$HOST/"
-msg "  ${N}Um app:${F}  https://<porta>.$HOST/   (ex: https://8080.$HOST/)"
+msg "  ${N}Painel:${F}  https://$HOST/        (HTTPS, com certificado)"
+msg "  ${N}Um app:${F}  http://<porta>.$HOST/   (ex: http://8080.$HOST/)"
 msg
 if [ "$PROTECAO" = "on" ]; then
   msg "  ${N}Protecao:${F} ligada — usuario '$USUARIO', a senha da turma"
@@ -289,4 +351,6 @@ fi
 msg
 msg "  Parar:      cd $DIR && docker compose down"
 msg "  Logs:       cd $DIR && docker compose logs -f caddy"
+msg "  Apache:     parado; o Caddy serve a mesma pagina na 80."
+msg "              Desfazer: docker compose down && sudo systemctl enable --now apache2" 
 msg

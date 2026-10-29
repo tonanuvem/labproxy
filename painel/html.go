@@ -21,8 +21,10 @@ type dadosNegado struct {
 	Motivo string
 }
 
+// As aplicacoes sao servidas em HTTP, nao HTTPS: o certificado cobre apenas
+// o nome do painel. Ver §3.5 do CONTEXTO.md.
 func (e entrada) URL(host string) string {
-	return "https://" + itoa(e.Porta) + "." + host + "/"
+	return "http://" + itoa(e.Porta) + "." + host + "/"
 }
 
 // Aberta: o proxy libera a porta. Clicavel: vale oferecer um link.
@@ -115,7 +117,9 @@ const tmplIndex = `
 <div class="prot">
   <h3>Lab protegido por senha</h3>
   <p>Quem abrir qualquer endereco deste lab precisa entrar com
-  <code>{{.Usuario}}</code> e a senha da turma.</p>
+  <code>{{.Usuario}}</code> e a senha da turma. Nas aplicacoes, que sao HTTP,
+  essa senha viaja em texto claro — ela serve para afastar quem varre a
+  internet, nao para proteger segredo.</p>
   <form method="post" action="/_protecao">
     <input type="hidden" name="acao" value="desativar">
     <button type="submit">Desligar a protecao</button>
@@ -186,7 +190,8 @@ comum. Processo rodando direto na VM, fora do Docker, aparece como
 de fora de proposito, e por isso nao aparece como aberta.</p>
 
 <footer>labproxy &middot; o endereco de cada app e'
-<code>https://&lt;porta&gt;.{{.Host}}</code></footer>
+<code>http://&lt;porta&gt;.{{.Host}}</code> &middot; esta pagina e' a unica em
+HTTPS, as aplicacoes abrem em HTTP</footer>
 {{end}}`
 
 const tmplNegado = `
