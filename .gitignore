@@ -1,0 +1,10 @@
+# Certificado e chave do proxy: distribuidos em tempo de execucao,
+# nunca versionados.
+*.pem
+*.key
+cert/
+# Gerado pelo proxy.sh a partir do nome do aluno.
+Caddyfile
+
+.env
+.DS_Store
