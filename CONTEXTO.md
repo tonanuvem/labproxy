@@ -623,9 +623,11 @@ Regra que sai disso: **todo serviço que fala com o host precisa do
    resto passa por ele. A cola de ~15 linhas do `exec` é mais barata que essa
    exceção: o script manda os dois headers como qualquer cliente.
 
-   Cuidados do script: `EXEC_MODE` indefinido (em RAW ele recebe o token cru
-   em vez do valor pronto), e ignorar argumentos extras — versões novas do
-   lego passam o TTL como quarto parâmetro.
+   O script recebe exatamente `$1=present|cleanup`, `$2=fqdn`, `$3=value` —
+   conferido no `providers/dns/exec/exec.go` do master. `EXEC_MODE` tem de
+   ficar **fora do ambiente**: em `RAW` o script recebe o token cru em vez do
+   valor pronto, e a comparação é exata contra `"RAW"`, então até `raw`
+   minúsculo cai no modo padrão.
 
    Os limites que tornam isso seguro: só `TXT`, só nomes começando com
    `_acme-challenge.`, só na zona da turma, TTL 60, e **nunca** com a senha
