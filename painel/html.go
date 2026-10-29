@@ -180,7 +180,7 @@ se o container reiniciar, ela volta ao padrao.</p>
     <span class="nome">{{.Container}}</span>
     <span class="tag{{if .Bloqueada}} bloq{{end}}">{{.Rotulo}}</span>
   </div>
-  <div class="img">{{.Imagem}} &middot; container :{{.PortaInt}}</div>
+  <div class="img">{{.Imagem}}{{if .PortaInt}} &middot; container :{{.PortaInt}}{{end}}</div>
   {{if .Motivo}}<div class="motivo">{{.Motivo}}</div>{{end}}</li>
 {{end}}{{end}}</ul>
 {{end}}

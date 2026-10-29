@@ -62,7 +62,7 @@ func portaAdministrativa(p int) (string, bool) {
 		return "e' a porta do proprio proxy", true
 	}
 	if p == 80 {
-		return "e' a porta do apache do host, fora do proxy", true
+		return "e' a porta HTTP do proprio proxy", true
 	}
 	if m, ok := denylist[p]; ok {
 		return m, true
