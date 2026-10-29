@@ -152,7 +152,7 @@ se o container reiniciar, ela volta ao padrao.</p>
 {{if $ac}}
 <ul>{{range .Inv.Entradas}}{{if .Aberta}}
   <li><div class="linha">
-    {{if .Clicavel}}<a class="porta" href="{{.URL $host}}">{{.Porta}}</a>
+    {{if .Clicavel}}<a class="porta" href="{{.URL $host}}" target="_blank" rel="noopener noreferrer">{{.Porta}}</a>
     {{else}}<span class="porta off">{{.Porta}}</span>{{end}}
     <span class="nome">{{.Container}}</span>
     <span class="tag{{if .Clicavel}} ok{{end}}">{{.Rotulo}}</span>
