@@ -194,6 +194,23 @@ O preço: a chave privada é a mesma em todas as VMs, então um aluno pode
 apresentar-se como o host de um colega. Num lab entre colegas isso é
 aceitável; num ambiente avaliativo, não. **Decisão consciente.**
 
+> **O raio cresceu com o §3.5, e isso aconteceu de lado.** Quando o
+> certificado tinha um SAN curinga por aluno, a chave que ia para cada VM
+> servia só ao subdomínio daquele aluno. Com um curinga de turma, a mesma
+> chave cobre o painel de **todos** os alunos e também
+> `api.aluno.lab.tonanuvem.com` — o host da própria API, que está sob o
+> mesmo curinga de um rótulo.
+>
+> Não derruba o desenho: ter um certificado válido não basta para se passar
+> por um host, é preciso estar no caminho da rede, e o aluno já é root na
+> própria VM. Mas numa turma onde o Security Group é aberto por decisão,
+> "estar no caminho" é menos hipotético do que soaria em outro contexto.
+>
+> Fica registrado como decisão, e não como efeito colateral. Voltar atrás
+> significa voltar ao SAN por aluno, e com ele todo o custo que o §3.5
+> eliminou: reemissão a cada aluno novo, N desafios DNS-01 em série, e o
+> nome de cada aluno publicado no Certificate Transparency.
+
 ### 3.5 Painel em HTTPS, aplicações em HTTP
 
 Esta decisão veio depois das outras e encolheu o problema, então vale ler
@@ -670,6 +687,21 @@ de `--user`** — e nada disso se verifica no macOS.
    Isso resolve §6.1 e §6.2 juntos, porque o mesmo serviço que valida o
    token de posse passa a poder guardar e servir o certificado. Encaminhado
    à sessão que cuida do repo `dns`.
+
+0c. **Distribuição: `PUT` e `GET /certificado` na API da turma.** O cliente
+   já existe no `proxy.sh` (`buscar_cert_api`), e desde 2026-10-30 o
+   `CERT_URL` tem padrão `$API_URL/certificado` — enquanto a rota não
+   existir, a busca falha em silêncio e o fluxo cai no autoassinado.
+   O `GET` autentica pelo **token de posse**, não pela senha da turma, que é
+   pública. Encaminhado à sessão do repo `dns`.
+
+   Um achado dela que vale guardar: guardar o certificado **na tabela de
+   registros vazaria a chave privada**, porque `listar_registros()` faz
+   `scan` da tabela inteira autenticado só pela senha da turma, e o filtro
+   `_publico()` é uma *denylist* — remove apenas `token_hash` e deixa passar
+   todo o resto. Tabela própria, portanto. E vale olhar o `_publico` em si:
+   um filtro que lista o que remover deixa público por omissão tudo o que
+   for acrescentado depois.
 
 1. **Distribuição do certificado.** Continua o item crítico. O lado do
    cliente já está pronto e o contrato está em §3.4; falta o endpoint. O

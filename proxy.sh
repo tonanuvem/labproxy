@@ -28,7 +28,10 @@ ZONA="${DNS_ZONA:-aluno.lab.tonanuvem.com}"
 API_URL="${DNS_API_URL:-https://api.aluno.lab.tonanuvem.com}"
 SENHA_API="${DNS_API_KEY:-aluno}"
 TOKEN_FILE="${DNS_TOKEN_FILE:-$HOME/.fiap_dns_token}"
-CERT_URL="${LABPROXY_CERT_URL:-}"
+# Padrao, e nao vazio: o aluno nao deve precisar passar nada para ter HTTPS
+# valido. Enquanto a rota nao existir, a busca falha em silencio e o fluxo
+# cai no autoassinado, como antes. LABPROXY_CERT_URL=off desliga a tentativa.
+CERT_URL="${LABPROXY_CERT_URL:-$API_URL/certificado}"
 SENHA="${LABPROXY_SENHA:-$SENHA_API}"
 USUARIO="${LABPROXY_USUARIO:-aluno}"
 # Desligada por padrao: o lab sobe aberto e o aluno protege pelo painel se
@@ -167,6 +170,22 @@ open(d + "/cert/key.pem", "w").write(k)
   return 0
 }
 
+# A busca grava direto em cert/, entao guardamos o que havia para poder
+# voltar atras se o que vier nao servir.
+guardar_cert_atual() {
+  rm -rf "$DIR/cert.bak"
+  [ -f "$DIR/cert/cert.pem" ] && cp -a "$DIR/cert" "$DIR/cert.bak" 2>/dev/null
+  return 0
+}
+
+restaurar_cert() {
+  [ -d "$DIR/cert.bak" ] || return 0
+  cp -a "$DIR/cert.bak/." "$DIR/cert/" 2>/dev/null
+  rm -rf "$DIR/cert.bak"
+}
+
+descartar_backup() { rm -rf "$DIR/cert.bak"; }
+
 gerar_autoassinado() {
   # Um nome so: o do painel. O aluno passa pelo aviso do navegador uma vez,
   # nao uma vez por aplicacao como acontecia quando as portas eram HTTPS.
@@ -178,17 +197,32 @@ gerar_autoassinado() {
 }
 
 obter_cert() {
-  # 1) certificado da turma, pelo endpoint autenticado por token (§3.4)
-  if [ -n "$CERT_URL" ] && buscar_cert_api; then
-    ok "certificado da turma obtido de $CERT_URL"
-  # 2) certificado ja presente e valido para este nome
-  elif [ -f "$DIR/cert/cert.pem" ] && [ -f "$DIR/cert/key.pem" ] && san_cobre "$HOST"; then
-    ok "certificado reaproveitado de $DIR/cert/"
-  # 3) autoassinado: so para validar o lab, o navegador vai reclamar
+  local tinha_bom=0
+  [ -f "$DIR/cert/cert.pem" ] && [ -f "$DIR/cert/key.pem" ] && san_cobre "$HOST" \
+    && tinha_bom=1
+
+  # 1) certificado da turma, pelo endpoint autenticado por token (§3.4).
+  #    A busca grava por cima, entao so aceitamos se o que veio cobrir este
+  #    nome: sem esta checagem, uma resposta errada da API trocaria um
+  #    certificado bom por um inutil e o painel pararia de abrir.
+  if [ "$CERT_URL" != "off" ] && guardar_cert_atual && buscar_cert_api; then
+    if san_cobre "$HOST"; then
+      ok "certificado da turma obtido de $CERT_URL"
+      descartar_backup
+    else
+      restaurar_cert
+      aviso "a API devolveu um certificado que nao cobre $HOST; ignorado."
+      [ "$tinha_bom" = "1" ] && ok "certificado anterior mantido"
+    fi
+  fi
+
+  if san_cobre "$HOST" 2>/dev/null; then
+    [ "$tinha_bom" = "1" ] && ok "certificado reaproveitado de $DIR/cert/"
   else
+    # 3) autoassinado: so para validar o lab, o navegador vai reclamar
     gerar_autoassinado
     aviso "usando certificado ${N}autoassinado${F} — o navegador vai avisar."
-    info "  Para o certificado da turma: LABPROXY_CERT_URL=... bash proxy.sh"
+    info "  O certificado da turma vem de $CERT_URL quando a rota existir."
   fi
 
   openssl x509 -in "$DIR/cert/cert.pem" -noout -checkend 604800 >/dev/null 2>&1 \
