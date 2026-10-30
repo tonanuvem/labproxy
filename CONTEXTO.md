@@ -719,6 +719,20 @@ de `--user`** — e nada disso se verifica no macOS.
    um certificado que não tem, levaria 304, e o autoassinado ficaria para
    sempre.
 
+   **Validado contra a API real em 2026-10-30**, da VM `fiaplab-1-aluno`,
+   com o token de posse dela — sem senha de instrutor, que o `GET` não
+   exige:
+
+   ```
+   1a busca  200  5868 bytes, 3 certificados, SAN *.aluno.lab.tonanuvem.com
+                  emissor (STAGING) Dastardly Durum YR1, chave em modo 600
+                  impressao guardada: b7af30f5ca61054b
+   2a busca  304  certificado intacto, serial idêntico
+   ```
+
+   O `san_cobre` aceitou pelo curinga da turma. A distribuição está fechada
+   do lado do labproxy.
+
    Um achado dela que vale guardar: guardar o certificado **na tabela de
    registros vazaria a chave privada**, porque `listar_registros()` faz
    `scan` da tabela inteira autenticado só pela senha da turma, e o filtro
