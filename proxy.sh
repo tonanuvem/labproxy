@@ -145,14 +145,40 @@ san_cobre() {
   printf '%s' "$sans" | grep -qF "DNS:*.$pai"
 }
 
+# A mesma impressao que a API calcula: sha256 do PEM, 16 digitos hex. Serve
+# para pedir 304 e nao rebaixar o certificado a cada subida de VM. Errar o
+# calculo nao quebra nada — so devolve 200 e baixa de novo.
+impressao_local() {
+  [ -f "$DIR/cert/cert.pem" ] || return 1
+  { sha256sum "$DIR/cert/cert.pem" 2>/dev/null || shasum -a 256 "$DIR/cert/cert.pem"; } \
+    | cut -c1-16
+}
+
 buscar_cert_api() {
   [ -n "$CERT_URL" ] || return 1
   [ -f "$TOKEN_FILE" ] || { aviso "sem $TOKEN_FILE: rode o dns.sh antes."; return 1; }
   command -v python3 >/dev/null || return 1
-  local token resp
+
+  local token url imp codigo resp
   token=$(tr -d '[:space:]' < "$TOKEN_FILE")
-  resp=$(curl -fsS --max-time 30 -H "x-api-key: $SENHA_API" -H "x-dns-token: $token" \
-         "$CERT_URL" 2>/dev/null) || return 1
+  url="$CERT_URL"
+  imp=$(impressao_local) && [ -n "$imp" ] && url="$CERT_URL?impressao=$imp"
+
+  # Sem -f: precisamos ver o 304, que nao e' erro e vem com corpo vazio.
+  resp=$(curl -sS --max-time 30 -w '\n%{http_code}' \
+         -H "x-api-key: $SENHA_API" -H "x-dns-token: $token" "$url" 2>/dev/null) \
+    || return 1
+  codigo=$(printf '%s' "$resp" | tail -n 1)
+  resp=$(printf '%s' "$resp" | sed '$d')
+
+  case "$codigo" in
+    304) ok "certificado da turma inalterado"; return 2 ;;
+    200) ;;
+    403) aviso "a API recusou o token de posse; rode o dns.sh de novo."; return 1 ;;
+    404) return 1 ;;   # nada publicado, ou rota ainda nao existe
+    *)   return 1 ;;
+  esac
+
   printf '%s' "$resp" | python3 -I -c '
 import json, sys, os
 d = os.environ["DIR"]
@@ -205,7 +231,16 @@ obter_cert() {
   #    A busca grava por cima, entao so aceitamos se o que veio cobrir este
   #    nome: sem esta checagem, uma resposta errada da API trocaria um
   #    certificado bom por um inutil e o painel pararia de abrir.
-  if [ "$CERT_URL" != "off" ] && guardar_cert_atual && buscar_cert_api; then
+  local r=1
+  if [ "$CERT_URL" != "off" ]; then
+    guardar_cert_atual
+    buscar_cert_api && r=0 || r=$?
+  fi
+
+  # r=2 e' o 304: nada foi gravado, o que esta no disco continua valendo.
+  if [ "$r" = "2" ]; then
+    descartar_backup
+  elif [ "$r" = "0" ]; then
     if san_cobre "$HOST"; then
       ok "certificado da turma obtido de $CERT_URL"
       descartar_backup
@@ -214,6 +249,8 @@ obter_cert() {
       aviso "a API devolveu um certificado que nao cobre $HOST; ignorado."
       [ "$tinha_bom" = "1" ] && ok "certificado anterior mantido"
     fi
+  else
+    descartar_backup
   fi
 
   if san_cobre "$HOST" 2>/dev/null; then

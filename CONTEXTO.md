@@ -688,12 +688,25 @@ de `--user`** — e nada disso se verifica no macOS.
    token de posse passa a poder guardar e servir o certificado. Encaminhado
    à sessão que cuida do repo `dns`.
 
-0c. **Distribuição: `PUT` e `GET /certificado` na API da turma.** O cliente
-   já existe no `proxy.sh` (`buscar_cert_api`), e desde 2026-10-30 o
-   `CERT_URL` tem padrão `$API_URL/certificado` — enquanto a rota não
-   existir, a busca falha em silêncio e o fluxo cai no autoassinado.
-   O `GET` autentica pelo **token de posse**, não pela senha da turma, que é
-   pública. Encaminhado à sessão do repo `dns`.
+0c. **Distribuição: `PUT` e `GET /certificado` na API da turma.** O `GET`
+   autentica pelo **token de posse**, não pela senha da turma, que é
+   pública. Implementado no repo `dns` (`melhorias-dns`), ainda não
+   implantado. Contrato:
+
+   ```
+   GET /certificado?impressao=<a que a VM tem>
+     x-api-key + x-dns-token
+     200 → {"cert","key","emitido_em","expira_em","impressao"}
+     304 → mantém o que está no disco
+     403 → token inválido     404 → nada publicado
+   PUT /certificado    x-admin-key    {"cert","key"}
+   ```
+
+   O lado do labproxy está pronto e testado contra um endpoint simulado:
+   manda a impressão quando tem certificado local, trata o 304 sem rebaixar
+   nada, e um 403 não destrói o que já está no disco. A impressão é o
+   `sha256` do PEM truncado em 16 dígitos; errá-la não quebra nada, só
+   devolve 200 e baixa de novo.
 
    Um achado dela que vale guardar: guardar o certificado **na tabela de
    registros vazaria a chave privada**, porque `listar_registros()` faz
