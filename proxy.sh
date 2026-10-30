@@ -145,13 +145,19 @@ san_cobre() {
   printf '%s' "$sans" | grep -qF "DNS:*.$pai"
 }
 
-# A mesma impressao que a API calcula: sha256 do PEM, 16 digitos hex. Serve
-# para pedir 304 e nao rebaixar o certificado a cada subida de VM. Errar o
-# calculo nao quebra nada — so devolve 200 e baixa de novo.
+# A impressao que a API devolveu junto com o certificado, guardada verbatim.
+#
+# Nao recalculamos. Recalcular exigiria acertar a normalizacao do outro lado,
+# e nao acerta: medido, o mesmo PEM da hashes diferentes com e sem a quebra
+# de linha final, e quem escreve o arquivo repoe justamente a quebra que a
+# API removeu antes de hashear. O 304 morreria em silencio e a VM rebaixaria
+# o certificado a cada subida, sem ninguem notar.
+#
+# Guardando o que a API disse, a comparacao passa a ser entre o valor dela e
+# ele mesmo, e a classe inteira de erro de normalizacao desaparece.
 impressao_local() {
-  [ -f "$DIR/cert/cert.pem" ] || return 1
-  { sha256sum "$DIR/cert/cert.pem" 2>/dev/null || shasum -a 256 "$DIR/cert/cert.pem"; } \
-    | cut -c1-16
+  [ -s "$DIR/cert/impressao" ] || return 1
+  tr -d '[:space:]' < "$DIR/cert/impressao"
 }
 
 buscar_cert_api() {
@@ -191,6 +197,9 @@ if "BEGIN CERTIFICATE" not in c or "BEGIN" not in k:
     sys.exit(1)
 open(d + "/cert/cert.pem", "w").write(c)
 open(d + "/cert/key.pem", "w").write(k)
+imp = (o.get("impressao") or "").strip()
+if imp:
+    open(d + "/cert/impressao", "w").write(imp)
 ' || return 1
   chmod 600 "$DIR/cert/key.pem"
   return 0
@@ -213,6 +222,11 @@ restaurar_cert() {
 descartar_backup() { rm -rf "$DIR/cert.bak"; }
 
 gerar_autoassinado() {
+  # A impressao antiga tem de sair junto. Deixa-la para tras faria a VM
+  # alegar ter um certificado que nao tem: a API responderia 304 e o
+  # autoassinado ficaria para sempre.
+  rm -f "$DIR/cert/impressao"
+
   # Um nome so: o do painel. O aluno passa pelo aviso do navegador uma vez,
   # nao uma vez por aplicacao como acontecia quando as portas eram HTTPS.
   openssl req -x509 -newkey rsa:2048 -nodes -days 30 \

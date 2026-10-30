@@ -703,10 +703,21 @@ de `--user`** — e nada disso se verifica no macOS.
    ```
 
    O lado do labproxy está pronto e testado contra um endpoint simulado:
-   manda a impressão quando tem certificado local, trata o 304 sem rebaixar
-   nada, e um 403 não destrói o que já está no disco. A impressão é o
-   `sha256` do PEM truncado em 16 dígitos; errá-la não quebra nada, só
-   devolve 200 e baixa de novo.
+   manda a impressão quando tem, trata o 304 sem rebaixar nada, e um 403 não
+   destrói o que já está no disco.
+
+   **A impressão é guardada verbatim, nunca recalculada** (`cert/impressao`).
+   A primeira versão fazia `sha256sum` do arquivo, e isso nunca teria
+   funcionado: a API faz `strip()` antes de hashear, e quem escreve o arquivo
+   repõe a quebra de linha que ela removeu. Medido — o mesmo PEM dá
+   `3a7f1327fe3ac40f` com a quebra e `23709f52be9fc235` sem. O 304 morreria
+   em silêncio e cada subida de VM rebaixaria o certificado inteiro, sem
+   ninguém notar. Guardando o valor que a API devolveu, a comparação é entre
+   o que ela disse e ele mesmo.
+
+   O autoassinado apaga `cert/impressao` ao gerar. Sem isso a VM alegaria ter
+   um certificado que não tem, levaria 304, e o autoassinado ficaria para
+   sempre.
 
    Um achado dela que vale guardar: guardar o certificado **na tabela de
    registros vazaria a chave privada**, porque `listar_registros()` faz
