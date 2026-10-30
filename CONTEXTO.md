@@ -574,8 +574,8 @@ Não existe por padrão — é um alias do Docker Desktop. No EC2 Linux exige
 `docker0` (172.17.0.1), e funciona mesmo com o Caddy numa rede bridge
 própria do compose.
 
-**Não validar este projeto no Docker Desktop do macOS.** Ele mente de duas
-formas, e as duas já custaram caro:
+**Não validar este projeto no Docker Desktop do macOS.** Ele mente de três
+formas, e as três já custaram caro:
 
 1. Uma porta publicada só em `127.0.0.1` *é* alcançável pelo proxy lá, o
    oposto do que acontece na EC2. O teste local deu esse falso resultado
@@ -587,8 +587,16 @@ formas, e as duas já custaram caro:
    negada, em silêncio, enquanto os containers apareciam normalmente. O
    teste local passava, porque lá o alias estava lá de graça.
 
+3. Um container que escreve num bind mount escreve **como root** no Linux, e
+   os arquivos ficam ilegíveis para quem chamou. No macOS o Docker Desktop
+   mapeia o dono e o problema some. O `emitir-cert.sh` emitiu o certificado
+   no CloudShell e depois não conseguiu lê-lo:
+   `find: '/home/cloudshell-user/cert-aluno/certificates': Permission denied`.
+   Resolvido com `--user "$(id -u):$(id -g)"` no `docker run`.
+
 Regra que sai disso: **todo serviço que fala com o host precisa do
-`extra_hosts` explícito**, e isso não se verifica no macOS.
+`extra_hosts` explícito, e todo container que escreve num bind mount precisa
+de `--user`** — e nada disso se verifica no macOS.
 
 ## 6. Em aberto
 
@@ -852,8 +860,13 @@ Dois defeitos que só apareceram aqui, e nenhum deles apareceria no macOS:
   num labproxy local, o `curl` validou **sem `-k`** (`ssl_verify=0`) e o
   painel abriu: é a prova de que o aviso do navegador some.
 
-  O que falta é só trocar o Pebble pela Let's Encrypt de verdade, o que
-  depende de credencial válida ou da rota `/acme` (item 0b).
+  E em 2026-10-30 o `emitir-cert.sh` correu **contra o staging da Let's
+  Encrypt de verdade**, do CloudShell da conta da turma, pelo caminho
+  `route53`: o desafio DNS-01 foi criado no Route 53 real, validado, e o
+  certificado emitido. O fluxo está provado ponta a ponta.
+
+  Falta só a emissão em **produção**, que é o mesmo comando com
+  `--producao`.
 - A **descoberta automática do nome** depende de `GET /registros` da API da
   turma, que passou a devolver **500** no fim de 2026-10-29. Enquanto não
   voltar, o `proxy.sh` precisa de `LABPROXY_NOME=<nome>`, e o `dns.sh` do

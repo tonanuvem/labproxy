@@ -70,6 +70,12 @@ else
   ok "usando o ${N}staging${F} (o certificado nao sera confiavel; so valida o fluxo)"
 fi
 
+mkdir -p "$SAIDA" 2>/dev/null || true
+if [ -e "$SAIDA" ] && [ ! -w "$SAIDA" ]; then
+  erro "o diretorio $SAIDA existe e nao e' seu.
+       Provavelmente sobrou de uma execucao anterior em que o lego rodou
+       como root. Apague com: sudo rm -rf $SAIDA"
+fi
 mkdir -p "$SAIDA"
 printf '\n  Pedindo %s\n\n' "${N}${NOME}${F}"
 
@@ -97,7 +103,12 @@ else
   PROVIDER=route53
 fi
 
+# --user importa: sem ele o lego roda como root e os arquivos saem com dono
+# root no bind mount, e quem chamou o script nao consegue nem ler o
+# certificado que acabou de emitir. No Docker Desktop do macOS isso nao
+# aparece, porque ele mapeia o dono; no Linux, e no CloudShell, aparece.
 docker run --rm -i \
+  --user "$(id -u):$(id -g)" \
   -v "$SAIDA:/data" -e LEGO_PATH=/data \
   --env-file "$ENVFILE" \
   "$LEGO_IMG" run \
@@ -109,9 +120,12 @@ docker run --rm -i \
     -d "$NOME" \
   || erro "o lego falhou. Veja a mensagem acima."
 
-CERT=$(find "$SAIDA/certificates" -name '*.crt' | head -1)
-CHAVE=$(find "$SAIDA/certificates" -name '*.key' | head -1)
-[ -f "$CERT" ] && [ -f "$CHAVE" ] || erro "o lego terminou mas nao achei os arquivos."
+CERT=$(find "$SAIDA/certificates" -name '*.crt' ! -name '*issuer*' 2>/dev/null | head -1)
+CHAVE=$(find "$SAIDA/certificates" -name '*.key' 2>/dev/null | head -1)
+[ -n "$CERT" ] && [ -f "$CERT" ] && [ -n "$CHAVE" ] && [ -f "$CHAVE" ] \
+  || erro "o lego emitiu, mas nao consegui ler $SAIDA/certificates.
+       Se a mensagem acima foi 'Permission denied', os arquivos ficaram com
+       dono root de uma execucao antiga: sudo rm -rf $SAIDA e rode de novo."
 
 cp "$CERT"  "$SAIDA/cert.pem"
 cp "$CHAVE" "$SAIDA/key.pem"
