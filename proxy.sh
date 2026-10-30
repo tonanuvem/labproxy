@@ -200,6 +200,10 @@ open(d + "/cert/key.pem", "w").write(k)
 imp = (o.get("impressao") or "").strip()
 if imp:
     open(d + "/cert/impressao", "w").write(imp)
+# Vazio quando o certificado guardado antecede o campo. Tratar como
+# desconhecido, nunca como producao: o lado seguro aqui avisa a mais.
+amb = (o.get("ambiente") or "").strip().lower()
+open(d + "/cert/ambiente", "w").write(amb or "desconhecido")
 ' || return 1
   chmod 600 "$DIR/cert/key.pem"
   return 0
@@ -226,6 +230,7 @@ gerar_autoassinado() {
   # alegar ter um certificado que nao tem: a API responderia 304 e o
   # autoassinado ficaria para sempre.
   rm -f "$DIR/cert/impressao"
+  printf 'autoassinado' > "$DIR/cert/ambiente"
 
   # Um nome so: o do painel. O aluno passa pelo aviso do navegador uma vez,
   # nao uma vez por aplicacao como acontecia quando as portas eram HTTPS.
@@ -418,7 +423,15 @@ subir() {
     caminho="$CAMINHO_TUNEL"
   fi
 
+  # O painel nao enxerga o diretorio do certificado, e nao deve: a chave
+  # privada mora la. Passamos so a informacao de que ele precisa para avisar.
+  local ambiente expira
+  ambiente=$(tr -d '[:space:]' < "$DIR/cert/ambiente" 2>/dev/null || echo desconhecido)
+  expira=$(openssl x509 -in "$DIR/cert/cert.pem" -noout -enddate 2>/dev/null | cut -d= -f2)
+
   cat > "$DIR/.env" <<EOF
+LABPROXY_CERT_AMBIENTE=$ambiente
+LABPROXY_CERT_EXPIRA=$expira
 COMPOSE_PROFILES=$perfis
 LABPROXY_TUNEL_CAMINHO=$caminho
 LABPROXY_USUARIO_SSH=$(id -un)

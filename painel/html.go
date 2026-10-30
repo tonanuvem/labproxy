@@ -15,6 +15,29 @@ type dadosIndex struct {
 	Usuario     string
 	Tunel       string // caminho do tunel SSH; vazio quando desligado
 	UsuarioSSH  string
+	CertAmb     string
+	CertExp     string
+}
+
+// CertConfiavel diz se o navegador vai aceitar o certificado sem reclamar.
+//
+// So "producao" conta. Vazio e' tratado como NAO confiavel de proposito: a
+// API devolve vazio para certificado guardado antes do campo existir, e
+// supor producao ai esconderia justamente o caso que este aviso existe para
+// pegar — uma turma rodando semanas em staging, com o cadeado quebrado
+// parecendo o de sempre.
+func (d dadosIndex) CertConfiavel() bool { return d.CertAmb == "producao" }
+
+func (d dadosIndex) CertRotulo() string {
+	switch d.CertAmb {
+	case "staging":
+		return "de teste (staging da Let's Encrypt)"
+	case "autoassinado":
+		return "autoassinado"
+	case "", "desconhecido":
+		return "de origem desconhecida"
+	}
+	return d.CertAmb
 }
 
 type dadosNegado struct {
@@ -190,6 +213,13 @@ se o container reiniciar, ela volta ao padrao.</p>
 comum. Processo rodando direto na VM, fora do Docker, aparece como
 <em>no host</em>. Uma porta presa ao <code>127.0.0.1</code> fica inalcancavel
 de fora de proposito, e por isso nao aparece como aberta.</p>
+
+{{if not .CertConfiavel}}
+<p class="nota">O certificado deste painel e' <strong>{{.CertRotulo}}</strong>,
+entao o navegador avisa que a conexao nao e' confiavel. O trafego vai
+cifrado do mesmo jeito; o que falta e' a assinatura que o navegador
+reconhece.{{if .CertExp}} Vence em {{.CertExp}}.{{end}}</p>
+{{end}}
 
 {{if .Tunel}}
 <h2>Acesso SSH</h2>

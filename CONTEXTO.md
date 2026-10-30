@@ -733,6 +733,19 @@ de `--user`** — e nada disso se verifica no macOS.
    O `san_cobre` aceitou pelo curinga da turma. A distribuição está fechada
    do lado do labproxy.
 
+   **O painel avisa quando o certificado não é de produção.** A API devolve
+   um campo `ambiente`, o `proxy.sh` o guarda em `cert/ambiente` e o passa
+   ao painel pelo `.env` — só a informação, nunca o diretório do
+   certificado, porque a chave privada mora lá.
+
+   Só `"producao"` conta como confiável; vazio é tratado como desconhecido.
+   Supor produção no vazio esconderia justamente o caso que o aviso existe
+   para pegar: a guarda de cota do `deploy.sh` olha a validade, e um
+   certificado de staging com 63 dias pela frente não seria trocado — uma
+   turma rodaria semanas nele, com o cadeado quebrado parecendo o de sempre.
+   Testados os quatro estados: produção não avisa, staging, autoassinado e
+   desconhecido avisam.
+
    Um achado dela que vale guardar: guardar o certificado **na tabela de
    registros vazaria a chave privada**, porque `listar_registros()` faz
    `scan` da tabela inteira autenticado só pela senha da turma, e o filtro

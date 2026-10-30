@@ -19,6 +19,8 @@ type app struct {
 	usuario string
 	senha   string
 	tunel   string // caminho do tunel SSH; vazio quando desligado
+	certAmb string // "producao", "staging", "autoassinado" ou desconhecido
+	certExp string
 	docker  *docker
 	estado  *estado
 }
@@ -36,6 +38,8 @@ func main() {
 		usuario: env("LABPROXY_USUARIO", "aluno"),
 		senha:   os.Getenv("LABPROXY_SENHA"),
 		tunel:   os.Getenv("LABPROXY_TUNEL_CAMINHO"),
+		certAmb: os.Getenv("LABPROXY_CERT_AMBIENTE"),
+		certExp: os.Getenv("LABPROXY_CERT_EXPIRA"),
 		docker:  novoDocker(env("DOCKER_API", "http://dockerproxy:2375"), 3*time.Second),
 		estado:  carregarEstado(env("DIR_ESTADO", "/estado"), env("PROTECAO_INICIAL", "0") == "1"),
 	}
@@ -189,5 +193,7 @@ func (a *app) index(w http.ResponseWriter, r *http.Request) {
 		Usuario:     a.usuario,
 		Tunel:       a.tunel,
 		UsuarioSSH:  env("LABPROXY_USUARIO_SSH", "ubuntu"),
+		CertAmb:     a.certAmb,
+		CertExp:     a.certExp,
 	})
 }
