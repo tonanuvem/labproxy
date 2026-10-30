@@ -862,11 +862,18 @@ Dois defeitos que só apareceram aqui, e nenhum deles apareceria no macOS:
 
   E em 2026-10-30 o `emitir-cert.sh` correu **contra o staging da Let's
   Encrypt de verdade**, do CloudShell da conta da turma, pelo caminho
-  `route53`: o desafio DNS-01 foi criado no Route 53 real, validado, e o
-  certificado emitido. O fluxo está provado ponta a ponta.
+  `route53`: desafio DNS-01 criado no Route 53 real, validado, certificado
+  emitido, arquivos legíveis, um SAN só. O fluxo está provado ponta a ponta.
+
+  **Pré-voo da produção, conferido:** não há registro `CAA` em
+  `aluno.lab.tonanuvem.com`, `lab.tonanuvem.com` nem `tonanuvem.com`, e a
+  zona delegada não tem DNSSEC. Nada impede a Let's Encrypt de emitir. Se um
+  dia alguém puser um CAA para o ACM, ele passa a barrar a Let's Encrypt
+  também — vale reconferir antes de uma turma nova.
 
   Falta só a emissão em **produção**, que é o mesmo comando com
-  `--producao`.
+  `--producao`. Lembrar do limite de 5 por conjunto idêntico de nomes a cada
+  7 dias, sem exceção: é o que pune repetir a produção por diagnóstico ruim.
 - A **descoberta automática do nome** depende de `GET /registros` da API da
   turma, que passou a devolver **500** no fim de 2026-10-29. Enquanto não
   voltar, o `proxy.sh` precisa de `LABPROXY_NOME=<nome>`, e o `dns.sh` do
