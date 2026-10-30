@@ -661,6 +661,34 @@ de `--user`** — e nada disso se verifica no macOS.
    qualquer nome da zona. Idempotência do `present` sai de graça: o lego não
    lê o corpo da resposta, qualquer 2xx é sucesso.
 
+   **Verificado no Route 53 real em 2026-10-30**, o caso que nenhum teste
+   contra um fake prova:
+
+   ```
+   present A → {"valores": 1}
+   present B → {"valores": 2}   somou, não sobrescreveu
+   cleanup A → {"valores": 1}   subtraiu só o próprio
+   cleanup B → {"valores": 0}   o registro saiu da zona
+   ```
+
+   Depois, os quatro nameservers autoritativos com zero TXT, e o certificado
+   guardado intacto.
+
+   > **Armadilha de medição, que quase virou um bug reportado.** Medindo com
+   > `dig` num nameserver só e 4 segundos de espera, o resultado vinha
+   > **atrasado um passo**: depois do `present A` o `dig` dizia 0, depois do
+   > `present B` dizia 1. Parecia que a lógica estava um passo atrás.
+   >
+   > São dois planos diferentes. O `valores` vem da Lambda lendo pelo
+   > *control plane* do Route 53, consistente de imediato para as próprias
+   > alterações; o `dig` lê os resolvedores autoritativos, que recebem a
+   > mudança depois, e um pode estar mais atrasado que outro. O
+   > compare-and-swap depende do control plane, não da propagação.
+   >
+   > Ao depurar DNS-01 com `dig`: espere bem mais que 4 segundos e consulte
+   > os quatro NS. É a mesma razão de o `--dns.propagation.wait 30s` do lego
+   > existir.
+
    **O par `present`/`cleanup` tem de somar e subtrair, não sobrescrever.**
    Se o certificado um dia ganhar o apex `aluno.lab.tonanuvem.com` junto do
    curinga, os dois validam no mesmo `_acme-challenge.aluno.lab...` e
