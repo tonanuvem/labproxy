@@ -837,11 +837,23 @@ Dois defeitos que só apareceram aqui, e nenhum deles apareceria no macOS:
 
 ### O que ainda não foi exercitado
 
-- Nenhuma emissão real da Let's Encrypt: todo o teste correu com
-  autoassinado. O `emitir-cert.sh` existe e para no lugar certo sem
-  credencial, mas nunca chegou a falar com a Let's Encrypt — nem no staging,
-  porque as credenciais da máquina estavam expiradas. É o que resta de
-  crítico, e é o único passo entre o lab e o HTTPS sem aviso.
+- Nenhuma emissão real da **Let's Encrypt**: as credenciais da máquina
+  estavam expiradas. Mas o fluxo inteiro foi ensaiado em Docker local contra
+  o **Pebble**, a CA de teste da própria Let's Encrypt, e fechou:
+
+  ```
+  lego → --dns exec → acme-dns.sh → lambda_handler REAL do repo dns
+       → zona → DNS (UDP e TCP) → Pebble valida → certificado emitido
+  ```
+
+  O certificado saiu com **um SAN só**, `*.aluno.lab.tonanuvem.com`, cobrindo
+  o painel de qualquer aluno e não cobrindo `8080.joao...` — que é o desenho
+  do §3.5, não um defeito. A zona ficou limpa depois do `cleanup`. Instalado
+  num labproxy local, o `curl` validou **sem `-k`** (`ssl_verify=0`) e o
+  painel abriu: é a prova de que o aviso do navegador some.
+
+  O que falta é só trocar o Pebble pela Let's Encrypt de verdade, o que
+  depende de credencial válida ou da rota `/acme` (item 0b).
 - A **descoberta automática do nome** depende de `GET /registros` da API da
   turma, que passou a devolver **500** no fim de 2026-10-29. Enquanto não
   voltar, o `proxy.sh` precisa de `LABPROXY_NOME=<nome>`, e o `dns.sh` do
