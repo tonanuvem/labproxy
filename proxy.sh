@@ -500,13 +500,13 @@ msg
 verificar
 msg
 msg "  ${N}Painel:${F}  https://$HOST/        (HTTPS, com certificado)"
-msg "  ${N}Um app:${F}  http://<porta>.$HOST/   (ex: http://8080.$HOST/)"
+#msg "  ${N}Um app:${F}  http://<porta>.$HOST/   (ex: http://8080.$HOST/)"
 msg
 if [ "$PROTECAO" = "on" ]; then
   msg "  ${N}Protecao:${F} ligada — usuario '$USUARIO', a senha da turma"
 else
-  aviso "o lab esta ${N}aberto na internet${F}. Qualquer um que descubra o"
-  info "  endereco alcanca suas aplicacoes. Para fechar, use o botao no painel."
+  aviso "o lab esta ${N}aberto na internet${F}. Acesse pelo painel."
+  #info "  Para fechar, use o botao no painel."
 fi
 msg
 if [ "$TUNEL" = "on" ]; then
@@ -525,8 +525,8 @@ if [ "$TUNEL" = "on" ]; then
   info "  certificado real, acrescente --tls-verify-certificate."
 fi
 msg
-msg "  Parar:      cd $DIR && docker compose down"
-msg "  Logs:       cd $DIR && docker compose logs -f caddy"
-msg "  Apache:     parado; o Caddy serve a mesma pagina na 80."
-msg "              Desfazer: docker compose down && sudo systemctl enable --now apache2" 
+#msg "  Parar:      cd $DIR && docker compose down"
+#msg "  Logs:       cd $DIR && docker compose logs -f caddy"
+#msg "  Apache:     parado; o Caddy serve a mesma pagina na 80."
+#msg "              Desfazer: docker compose down && sudo systemctl enable --now apache2" 
 msg
