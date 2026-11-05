@@ -367,8 +367,24 @@ containers do próprio labproxy são omitidos do inventário.
 
 **proxy.sh** — descobre o nome do aluno sozinho, consultando
 `GET /registros` da API do DNS e casando com o IP público da VM. O IP muda
-toda semana, o nome não, então não há o que perguntar. Só pergunta se a
-descoberta falhar.
+toda semana, o nome não, então não há o que perguntar.
+
+A descoberta depende de **duas** chamadas de rede (`checkip.amazonaws.com` e
+`/registros`), e qualquer uma falhando derrubava o script — numa turma
+inteira subindo o lab ao mesmo tempo, isso acontece. Pior: no fluxo
+documentado `curl … | bash` não há terminal para perguntar, então o erro era
+`rode o dns.sh primeiro` dito justamente a quem já tinha rodado, com a
+resposta certa parada em `~/.fiap_dns_nome`, gravada pelo próprio `dns.sh`.
+
+A ordem hoje é: `LABPROXY_NOME` → API → `~/.fiap_dns_nome` → pergunta. A API
+vem antes do arquivo de propósito: ela é a verdade do IP de agora, e o
+arquivo é o que o aluno escolheu um dia. O arquivo é a rede de segurança,
+não a fonte.
+
+O nome, venha de onde vier, passa por `nome_valido` antes de virar
+`HOST="$NOME.$ZONA"` — ele entra no Caddyfile e no `.env` sem aspas, e um
+nome com espaço ou `{}` quebrava a configuração três passos adiante, com
+mensagem de erro do Caddy em vez do ponto onde o nome entrou errado.
 
 **proxy.sh** — segue o padrão do `dns.sh`: `curl … | bash`, lê o nome do
 aluno, busca o certificado, gera o Caddyfile, sobe o compose. Idempotente.

@@ -8,7 +8,8 @@
 # que nao seja do labproxy. Ver CONTEXTO.md.
 #
 # Variaveis de ambiente, todas opcionais:
-#   LABPROXY_NOME        nome do aluno; se vazio, descobre pela API do DNS
+#   LABPROXY_NOME        nome do aluno; se vazio, descobre pela API do DNS e,
+#                        se a API nao responder, le ~/.fiap_dns_nome
 #   LABPROXY_CERT_URL    endpoint do certificado da turma (§3.4). Deve devolver
 #                        JSON {"cert":"-----BEGIN...","key":"-----BEGIN..."},
 #                        autenticado pelo token de posse em ~/.fiap_dns_token
@@ -28,6 +29,7 @@ ZONA="${DNS_ZONA:-aluno.lab.tonanuvem.com}"
 API_URL="${DNS_API_URL:-https://api.aluno.lab.tonanuvem.com}"
 SENHA_API="${DNS_API_KEY:-aluno}"
 TOKEN_FILE="${DNS_TOKEN_FILE:-$HOME/.fiap_dns_token}"
+NOME_FILE="${DNS_NOME_FILE:-$HOME/.fiap_dns_nome}"
 # Padrao, e nao vazio: o aluno nao deve precisar passar nada para ter HTTPS
 # valido. Enquanto a rota nao existir, a busca falha em silencio e o fluxo
 # cai no autoassinado, como antes. LABPROXY_CERT_URL=off desliga a tentativa.
@@ -87,21 +89,47 @@ for r in regs:
 ' "$ip" 2>/dev/null
 }
 
+# O nome entra no Caddyfile e no .env sem aspas, entao vale conferir a forma
+# antes. Um rotulo de DNS: letras, digitos e hifen, sem comecar nem terminar
+# em hifen. Barra a vinda de arquivo e a digitada, e tambem pega o dedo errado
+# no LABPROXY_NOME antes que vire um Caddyfile quebrado tres passos adiante.
+nome_valido() {
+  case "$1" in
+    *[!a-zA-Z0-9-]* | -* | *- | "") return 1 ;;
+  esac
+  [ "${#1}" -le 63 ]
+}
+
 resolver_nome() {
   if [ -n "${LABPROXY_NOME:-}" ]; then
-    NOME="$LABPROXY_NOME"; info "nome informado: ${N}${NOME}${F}"; return
+    NOME="$LABPROXY_NOME"; info "nome informado: ${N}${NOME}${F}"
+  elif NOME=$(descobrir_nome || true); [ -n "$NOME" ]; then
+    ok "nome descoberto pela API do DNS: ${N}${NOME}${F}"
+  elif NOME=$(ler_nome_do_arquivo); [ -n "$NOME" ]; then
+    # A descoberta depende de duas chamadas de rede; qualquer uma falhando
+    # derrubava o script inteiro com a resposta parada em disco, gravada pelo
+    # dns.sh. Pior no fluxo 'curl | bash', onde nao ha terminal para
+    # perguntar e o erro era "rode o dns.sh primeiro" para quem ja rodou.
+    aviso "a API do DNS nao respondeu; usando ${NOME_FILE}: ${N}${NOME}${F}"
+  else
+    aviso "nao foi possivel descobrir o nome pelo IP desta VM."
+    if [ ! -t 0 ]; then
+      erro "rode o dns.sh primeiro, ou passe o nome: LABPROXY_NOME=seunome bash proxy.sh"
+    fi
+    printf '  Qual o seu nome no DNS (o que voce usou no dns.sh)? '
+    read -r NOME
+    [ -n "$NOME" ] || erro "nome vazio."
   fi
-  NOME=$(descobrir_nome || true)
-  if [ -n "$NOME" ]; then
-    ok "nome descoberto pela API do DNS: ${N}${NOME}${F}"; return
-  fi
-  aviso "nao foi possivel descobrir o nome pelo IP desta VM."
-  if [ ! -t 0 ]; then
-    erro "rode o dns.sh primeiro, ou passe o nome: LABPROXY_NOME=seunome bash proxy.sh"
-  fi
-  printf '  Qual o seu nome no DNS (o que voce usou no dns.sh)? '
-  read -r NOME
-  [ -n "$NOME" ] || erro "nome vazio."
+
+  nome_valido "$NOME" \
+    || erro "nome invalido: '${NOME}'. Esperava so letras, digitos e hifen."
+}
+
+# O dns.sh grava o nome escolhido aqui, ao lado do token. Vem com quebra de
+# linha; o tr tira isso e qualquer espaco.
+ler_nome_do_arquivo() {
+  [ -f "$NOME_FILE" ] || return 1
+  tr -d '[:space:]' < "$NOME_FILE"
 }
 
 # ------------------------------------------------------------------- arquivos
