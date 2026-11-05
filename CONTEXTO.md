@@ -264,6 +264,22 @@ O preço, e é real:
   é a senha pública da turma, perde-se pouco — ela existe para afastar
   varredura, não para guardar segredo. O painel diz isso na página.
 
+Uma armadilha desta mudança só apareceu semanas depois. O painel marcava
+cada porta aberta com uma etiqueta verde **HTTPS** — correta quando as
+portas eram servidas por TLS, e esquecida no commit que as passou para
+HTTP. O resultado era uma página que prometia cadeado em cima de um link
+`http://`, no lugar exato onde o aluno vai conferir. Pior que não informar
+é informar o contrário.
+
+A correção não foi trocar o texto da etiqueta por "HTTP": porta aberta é o
+caso normal, e etiquetar o normal gasta a atenção que as exceções precisam.
+A etiqueta passou a existir só para o que foge do padrão (*no host*, *não
+fala HTTP*, *bloqueada*, *só no localhost*, *sem -p*), e o esquema aparece
+onde ele é verdade — no próprio endereço, impresso em cada cartão como
+`http://3000`. Regra que fica: o painel não repete em etiqueta o que o
+endereço já diz, porque etiqueta e endereço divergem com o tempo e o aluno
+acredita na etiqueta.
+
 ### 3.4 Distribuição do certificado
 
 Em aberto, mas com um caminho preferido: um endpoint novo na API que já
