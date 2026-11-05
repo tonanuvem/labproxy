@@ -225,3 +225,26 @@ var projetoProprio = env("LABPROXY_PROJETO", "labproxy")
 func ehLoopback(ip string) bool {
 	return ip == "127.0.0.1" || ip == "::1" || ip == "localhost"
 }
+
+// Abertas e NaoExpostas separam o inventario do jeito que a pagina o mostra.
+// Ficam aqui, e nao no template, porque o html/template nao sabe filtrar sem
+// uma passada extra por entrada so para descobrir se a secao tem conteudo.
+func (i *inventario) Abertas() []entrada {
+	var r []entrada
+	for _, e := range i.Entradas {
+		if e.Aberta() {
+			r = append(r, e)
+		}
+	}
+	return r
+}
+
+func (i *inventario) NaoExpostas() []entrada {
+	var r []entrada
+	for _, e := range i.Entradas {
+		if !e.Aberta() {
+			r = append(r, e)
+		}
+	}
+	return r
+}
